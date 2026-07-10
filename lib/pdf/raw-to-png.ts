@@ -15,7 +15,7 @@ import { PNG } from 'pngjs';
  *  - 4 (rgba)        -> passthrough
  */
 export function rawToPngBuffer(
-  data: Uint8Array | Buffer,
+  data: Uint8Array | Uint8ClampedArray | Buffer,
   width: number,
   height: number,
   channels: number,

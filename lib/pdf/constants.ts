@@ -1,6 +1,6 @@
 /**
  * PDF Provider Constants
- * Separated from pdf-providers.ts to avoid importing sharp in client components
+ * Separated from pdf-providers.ts to avoid importing unpdf (Node-only) in client components
  */
 
 import type { PDFProviderId, PDFProviderConfig } from './types';

@@ -118,7 +118,7 @@
  * Image Extraction Best Practices:
  * - Always convert to base64 data URLs (data:image/png;base64,...)
  * - Use PNG for lossless quality
- * - Use sharp for efficient image processing
+ * - Use pngjs (via rawToPngBuffer) for zero-native-dep image processing
  * - Handle errors per image (don't fail entire parsing)
  * - Log extraction failures but continue processing
  *
@@ -138,7 +138,7 @@
  */
 
 import { extractText, getDocumentProxy, extractImages } from 'unpdf';
-import sharp from 'sharp';
+import { rawToPngBuffer } from './raw-to-png';
 import type { PDFParserConfig } from './types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { PDF_PROVIDERS } from './constants';
@@ -224,16 +224,13 @@ async function parseWithUnpdf(pdfBuffer: Buffer): Promise<ParsedPdfContent> {
       for (let i = 0; i < pageImages.length; i++) {
         const imgData = pageImages[i];
         try {
-          // Use sharp to convert raw image data to PNG base64
-          const pngBuffer = await sharp(Buffer.from(imgData.data), {
-            raw: {
-              width: imgData.width,
-              height: imgData.height,
-              channels: imgData.channels,
-            },
-          })
-            .png()
-            .toBuffer();
+          // Convert raw image data to PNG base64 (pure JS, no native deps)
+          const pngBuffer = rawToPngBuffer(
+            imgData.data,
+            imgData.width,
+            imgData.height,
+            imgData.channels,
+          );
 
           // Convert to base64
           const base64 = `data:image/png;base64,${pngBuffer.toString('base64')}`;
