@@ -48,6 +48,15 @@ describe('rawToPngBuffer', () => {
     ]);
   });
 
+  it('expands a 2-channel gray+alpha buffer to RGBA', () => {
+    const ga = Buffer.from([128, 200, 50, 255]); // (gray,alpha) × 2 pixels
+    const png = rawToPngBuffer(ga, 2, 1, 2);
+    const decoded = readPng(png);
+    expect(Array.from(decoded.data as Uint8Array)).toEqual([
+      128, 128, 128, 200, 50, 50, 50, 255,
+    ]);
+  });
+
   it('throws on unsupported channel counts', () => {
     expect(() => rawToPngBuffer(Buffer.from([]), 1, 1, 5)).toThrow(/channel/i);
   });
