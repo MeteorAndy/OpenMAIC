@@ -136,6 +136,7 @@
     "@rollup/plugin-commonjs": "^28.0.1",
     "@rollup/plugin-node-resolve": "^16.0.1",
     "@tailwindcss/postcss": "^4",
+    "@tauri-apps/cli": "^2.11.4",
     "@types/file-saver": "^2.0.7",
     "@types/katex": "^0.16.8",
     "@types/lodash": "^4.17.23",
