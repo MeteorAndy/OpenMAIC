@@ -1,9 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::net::TcpListener;
+
+mod process_cleanup;
 use std::time::{Duration, Instant};
 
-use tauri::{Manager, WebviewUrl, WebviewWindowBuilder};
+use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
@@ -57,7 +59,7 @@ pub struct MutexChild(pub std::sync::Mutex<Option<CommandChild>>);
 fn main() {
     env_logger::init();
 
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             let port = free_port();
@@ -83,6 +85,10 @@ fn main() {
                 log::error!("node sidecar did not become healthy within 30s");
             }
 
+            // Tier 2: assign node to a Windows Job Object so a force-killed parent
+            // still gets the child reaped by the kernel. pid() borrows, safe before move.
+            process_cleanup::assign_to_job(child.pid());
+
             // Store the child so ExitRequested (Task 7) can kill it.
             app.manage(MutexChild(std::sync::Mutex::new(Some(child))));
 
@@ -97,6 +103,19 @@ fn main() {
 
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error building tauri app");
+
+    app.run(|app_handle: &tauri::AppHandle, event| match event {
+        RunEvent::ExitRequested { .. } | RunEvent::Exit => {
+            if let Some(state) = app_handle.try_state::<MutexChild>() {
+                if let Ok(mut guard) = state.0.lock() {
+                    if let Some(child) = guard.take() {
+                        let _ = child.kill();
+                    }
+                }
+            }
+        }
+        _ => {}
+    });
 }
