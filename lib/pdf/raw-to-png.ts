@@ -1,5 +1,11 @@
 import { PNG } from 'pngjs';
 
+// Guard against malicious PDFs with extreme image dimensions: pngjs allocates
+// width*height*4 bytes upfront, so unbounded dimensions = memory exhaustion (DoS).
+// sharp/libvips enforced similar limits internally; we must too after going pure-JS.
+const MAX_DIMENSION = 30000;
+const MAX_PIXELS = 200_000_000; // ~200 megapixels
+
 /**
  * Encode raw pixel data (width × height × channels) into a PNG Buffer.
  *
@@ -20,6 +26,20 @@ export function rawToPngBuffer(
   height: number,
   channels: number,
 ): Buffer {
+  if (
+    !Number.isFinite(width) ||
+    !Number.isFinite(height) ||
+    width <= 0 ||
+    height <= 0 ||
+    width > MAX_DIMENSION ||
+    height > MAX_DIMENSION ||
+    width * height > MAX_PIXELS
+  ) {
+    throw new Error(
+      `Invalid or oversized image dimensions: ${width}x${height}`,
+    );
+  }
+
   const png = new PNG({ width, height });
   const src = Buffer.from(data);
   const dst = png.data; // Uint8Array, length = width * height * 4

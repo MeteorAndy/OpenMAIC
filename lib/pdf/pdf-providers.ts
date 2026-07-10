@@ -244,8 +244,8 @@ async function parseWithUnpdf(pdfBuffer: Buffer): Promise<ParsedPdfContent> {
             width: imgData.width,
             height: imgData.height,
           });
-        } catch (sharpError) {
-          log.error(`Failed to convert image ${i + 1} from page ${pageNum}:`, sharpError);
+        } catch (convertError) {
+          log.error(`Failed to convert image ${i + 1} from page ${pageNum}:`, convertError);
         }
       }
     } catch (pageError) {

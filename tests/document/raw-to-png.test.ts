@@ -60,4 +60,15 @@ describe('rawToPngBuffer', () => {
   it('throws on unsupported channel counts', () => {
     expect(() => rawToPngBuffer(Buffer.from([]), 1, 1, 5)).toThrow(/channel/i);
   });
+
+  it('rejects oversized dimensions that would exhaust memory', () => {
+    // width beyond MAX_DIMENSION
+    expect(() => rawToPngBuffer(Buffer.from([]), 50000, 1, 4)).toThrow(/dimension/i);
+    // height beyond MAX_DIMENSION
+    expect(() => rawToPngBuffer(Buffer.from([]), 1, 50000, 4)).toThrow(/dimension/i);
+    // within per-side limit but pixel count over MAX_PIXELS (20000x20000 = 400M)
+    expect(() => rawToPngBuffer(Buffer.from([]), 20000, 20000, 4)).toThrow(/dimension/i);
+    // zero / negative rejected
+    expect(() => rawToPngBuffer(Buffer.from([]), 0, 1, 4)).toThrow(/dimension/i);
+  });
 });
