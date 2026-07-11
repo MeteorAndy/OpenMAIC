@@ -6,6 +6,8 @@ import { useBrowserTTS } from '@/lib/hooks/use-browser-tts';
 import {
   resolveAgentVoice,
   getSelectableProvidersWithVoices,
+  inferAgentGender,
+  pickGenderMatchedVoice,
   type ResolvedVoice,
 } from '@/lib/audio/voice-resolver';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
@@ -134,7 +136,11 @@ export function useDiscussionTTS({ enabled, agents, onAudioStateChange }: Discus
         if (isTTSProviderEnabled(globalTtsProviderId, ttsProvidersConfig[globalTtsProviderId])) {
           return {
             providerId: globalTtsProviderId,
-            voiceId: globalTtsVoice,
+            voiceId: pickGenderMatchedVoice(
+              globalTtsProviderId,
+              globalTtsVoice,
+              inferAgentGender(agent),
+            ),
             modelId: ttsProvidersConfig[globalTtsProviderId]?.modelId,
           };
         }

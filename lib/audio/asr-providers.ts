@@ -188,6 +188,9 @@ export async function transcribeAudio(
     case 'lemonade-asr':
       return await transcribeLemonadeASR(config, audioBuffer);
 
+    case 'doubao-asr':
+      return await transcribeDoubaoASR(config, audioBuffer);
+
     default:
       if (isCustomASRProvider(config.providerId)) {
         return await transcribeOpenAIWhisper(config, audioBuffer);
@@ -537,6 +540,66 @@ export async function getCurrentASRConfig(): Promise<ASRModelConfig> {
     baseUrl: providerConfig?.baseUrl || providerConfig?.customDefaultBaseUrl,
     language: asrLanguage,
   };
+}
+
+/**
+ * Doubao ASR implementation (Volcano openspeech bigmodel flash API).
+ * apiKey format: "appId:accessKey" (same as doubao-tts — reuse that key).
+ * Doc: https://www.volcengine.com/docs/6561/1631584
+ */
+async function transcribeDoubaoASR(
+  config: ASRModelConfig,
+  audioBuffer: Buffer | Blob,
+): Promise<ASRTranscriptionResult> {
+  const baseUrl = config.baseUrl || ASR_PROVIDERS['doubao-asr'].defaultBaseUrl || '';
+  const [appId, accessKey] = (config.apiKey || '').split(':');
+  if (!appId || !accessKey) {
+    throw new Error('Doubao ASR apiKey must be "appId:accessKey"');
+  }
+
+  // Convert audio to base64
+  let base64Audio: string;
+  if (audioBuffer instanceof Buffer) {
+    base64Audio = audioBuffer.toString('base64');
+  } else if (audioBuffer instanceof Blob) {
+    const arrayBuffer = await audioBuffer.arrayBuffer();
+    base64Audio = Buffer.from(arrayBuffer).toString('base64');
+  } else {
+    throw new Error('Invalid audio buffer type');
+  }
+
+  const response = await fetch(baseUrl, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Api-App-Key': appId,
+      'X-Api-Access-Key': accessKey,
+      'X-Api-Resource-Id': 'volc.bigasr.auc_turbo',
+      'X-Api-Request-Id': crypto.randomUUID(),
+      'X-Api-Sequence': '-1',
+    },
+    body: JSON.stringify({
+      user: { uid: appId },
+      audio: { data: base64Audio },
+      request: { model_name: 'bigmodel' },
+    }),
+  });
+
+  // Result status comes in the X-Api-Status-Code header, not the HTTP status.
+  const statusCode = response.headers.get('X-Api-Status-Code');
+  if (statusCode === '20000000') {
+    const data = await response.json();
+    return { text: data?.result?.text ?? '' };
+  }
+  // 20000003 / 45000002 = empty/silent audio → empty transcription
+  // (matches the empty-audio convention in other ASR impls).
+  if (statusCode === '20000003' || statusCode === '45000002') {
+    return { text: '' };
+  }
+  const message =
+    response.headers.get('X-Api-Message') ||
+    `Doubao ASR failed (status ${statusCode}, http ${response.status})`;
+  throw new Error(message);
 }
 
 // Re-export from constants for convenience

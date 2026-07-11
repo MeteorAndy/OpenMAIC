@@ -18,6 +18,7 @@ import type { SpeechAction } from '@/lib/types/action';
 import { splitLongSpeechActions } from '@/lib/audio/tts-utils';
 import { isTTSProviderEnabled } from '@/lib/audio/provider-enablement';
 import { resolveAgentVoiceOptions, pickNarratorAgent } from '@/lib/audio/agent-voice';
+import { pickGenderMatchedVoice, inferAgentGender } from '@/lib/audio/voice-resolver';
 import { useAgentRegistry } from '@/lib/orchestration/registry/store';
 import { generateMediaForOutlines } from '@/lib/media/media-orchestrator';
 import { lazyBoundedMap } from '@/lib/utils/concurrency';
@@ -234,10 +235,17 @@ export async function generateAndStoreTTS(
   // Narration is the teacher's voice — resolve it from the teacher agent profile
   // through the single resolver (registers + references by id for stable timbre).
   const teacher = pickNarratorAgent(useAgentRegistry.getState().listAgents());
+  // Match the narration voice to the teacher's gender — a male teacher shouldn't
+  // read with a female global ttsVoice (and vice-versa).
+  const narrationVoiceId = pickGenderMatchedVoice(
+    settings.ttsProviderId,
+    settings.ttsVoice,
+    inferAgentGender(teacher),
+  );
   const providerOptions = await resolveAgentVoiceOptions(teacher, {
     providerId: settings.ttsProviderId,
     providerConfig: ttsProviderConfig,
-    voiceId: settings.ttsVoice,
+    voiceId: narrationVoiceId,
     language,
   });
   const data = await withGenerationRetry(
@@ -250,7 +258,7 @@ export async function generateAndStoreTTS(
           audioId,
           ttsProviderId: settings.ttsProviderId,
           ttsModelId: ttsProviderConfig?.modelId,
-          ttsVoice: settings.ttsVoice,
+          ttsVoice: narrationVoiceId,
           ttsSpeed: settings.ttsSpeed,
           ttsApiKey: ttsProviderConfig?.apiKey || undefined,
           // Managed providers resolve their base URL server-side; only send the

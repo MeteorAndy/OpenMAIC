@@ -1267,6 +1267,18 @@ export const ASR_PROVIDERS: Record<BuiltInASRProviderId, ASRProviderConfig> = {
     supportedLanguages: CUSTOM_ASR_DEFAULT_LANGUAGES,
     supportedFormats: ['wav'],
   },
+  'doubao-asr': {
+    id: 'doubao-asr',
+    name: '豆包 ASR（火山引擎）',
+    requiresApiKey: true,
+    defaultBaseUrl: 'https://openspeech.bytedance.com/api/v3/auc/bigmodel/recognize/flash',
+    icon: '/logos/doubao.svg',
+    models: [],
+    defaultModelId: '',
+    // apiKey format: "appId:accessKey" — same scheme as doubao-tts; reuse that key.
+    supportedLanguages: ['auto', 'zh', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'ru', 'ar', 'pt', 'it', 'hi'],
+    supportedFormats: ['mp3', 'wav', 'ogg'],
+  },
 };
 
 /**

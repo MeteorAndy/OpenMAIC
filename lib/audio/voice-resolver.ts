@@ -31,6 +31,47 @@ export interface AgentVoiceOverride {
 export type AgentVoiceOverrides = Record<string, AgentVoiceOverride>;
 
 /**
+ * Infer an agent's gender from the voiceDesign.identity free text
+ * ("middle-aged male teacher" / "年轻女老师" / ...). Returns undefined when no
+ * signal — caller falls back to current (index-based / global) behavior.
+ */
+export function inferAgentGender(agent?: AgentConfig): 'male' | 'female' | undefined {
+  if (!agent) return undefined;
+  const text = `${agent.voiceDesign?.identity ?? ''}`.toLowerCase();
+  if (/\b(male|man|boy|男)\b/.test(text)) return 'male';
+  if (/\b(female|woman|girl|女)\b/.test(text)) return 'female';
+  return undefined;
+}
+
+/** Look up a voice's gender in the TTS_PROVIDERS registry. */
+function voiceGenderOf(
+  providerId: TTSProviderId,
+  voiceId: string,
+): 'male' | 'female' | 'neutral' | undefined {
+  const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
+  return provider?.voices.find((v) => v.id === voiceId)?.gender;
+}
+
+/**
+ * Pick a voice on the given provider matching the agent's gender. Falls back to
+ * preferredVoiceId unchanged when there is no gender signal or no same-gender
+ * voice. Used by both the narration path (use-scene-generator) and the
+ * discussion path (use-discussion-tts) so a male teacher never gets a female
+ * global voice and vice-versa.
+ */
+export function pickGenderMatchedVoice(
+  providerId: TTSProviderId,
+  preferredVoiceId: string,
+  agentGender: 'male' | 'female' | undefined,
+): string {
+  if (!agentGender) return preferredVoiceId;
+  if (voiceGenderOf(providerId, preferredVoiceId) === agentGender) return preferredVoiceId;
+  const provider = TTS_PROVIDERS[providerId as keyof typeof TTS_PROVIDERS];
+  const sameGender = provider?.voices.find((v) => v.gender === agentGender);
+  return sameGender?.id ?? preferredVoiceId;
+}
+
+/**
  * Resolve the TTS provider + voice for an agent, choosing only among ENABLED
  * providers (`enabledProviders` is the output of getEnabledProvidersWithVoices,
  * which already excludes disabled/unconfigured providers and browser-native).
@@ -76,13 +117,17 @@ export function resolveAgentVoice(
     }
   }
 
-  // Fallback: deterministic pick among enabled providers (canonical order).
+  // Fallback: deterministic pick among enabled providers (canonical order),
+  // preferring a voice whose gender matches the agent when inferable.
   if (enabledProviders.length > 0) {
     const first = enabledProviders[0];
     if (first.voices.length > 0) {
+      const g = inferAgentGender(agent);
+      const matched =
+        g ? first.voices.find((v) => voiceGenderOf(first.providerId, v.id) === g)?.id : undefined;
       return {
         providerId: first.providerId,
-        voiceId: first.voices[agentIndex % first.voices.length].id,
+        voiceId: matched ?? first.voices[agentIndex % first.voices.length].id,
       };
     }
   }

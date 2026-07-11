@@ -2,12 +2,12 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "openmaic-desktop",
   "version": "0.1.0",
-  "identifier": "com.example.openmaicdesktop",
+  "identifier": "com.openmaic.desktop",
   "build": {
-    "beforeDevCommand": "pnpm build && node scripts/prepare-standalone.mjs",
+    "beforeDevCommand": { "script": "pnpm build && node scripts/prepare-standalone.mjs", "wait": true },
     "beforeBuildCommand": "pnpm build && node scripts/prepare-standalone.mjs",
     "devUrl": "http://127.0.0.1:47823",
-    "frontendDist": "../src-tauri/resources/server"
+    "frontendDist": "../src-tauri/resources/frontend"
   },
   "app": {
     "windows": [],
@@ -17,7 +17,14 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
     "externalBin": ["binaries/node"],
     "resources": ["resources/server/**/*"]
   }

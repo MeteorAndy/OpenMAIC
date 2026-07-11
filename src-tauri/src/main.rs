@@ -120,8 +120,8 @@ fn main() {
             // Collect env vars for the sidecar. Next standalone server.js does NOT
             // auto-load .env files (that's a `next dev`/`next start` feature), so
             // without this the sidecar sees no provider keys and generate-classroom
-            // fails. dev: forward the repo's .env.local verbatim (single source of
-            // truth, same vars `pnpm dev` sees). prod: BYOK — user enters keys in the
+            // fails. dev: forward the repo's .env.local (dotenvy does $VAR/${VAR}
+            // substitution on values; single-quote a value to pass a literal $). prod: BYOK — user enters keys in the
             // UI; provider-config.ts resolves unmanaged providers from the client key,
             // no env needed, no keys shipped in the bundle.
             let mut sidecar_envs: Vec<(String, String)> = Vec::new();
@@ -135,15 +135,28 @@ fn main() {
                 match dotenvy::from_filename_iter(&env_local) {
                     Ok(iter) => {
                         let before = sidecar_envs.len();
+                        let mut errors = 0usize;
                         for item in iter {
-                            if let Ok((k, v)) = item {
-                                sidecar_envs.push((k, v));
+                            match item {
+                                Ok((k, v)) => {
+                                    log::debug!("sidecar env: {}", k);
+                                    sidecar_envs.push((k, v));
+                                }
+                                Err(e) => {
+                                    errors += 1;
+                                    log::warn!(
+                                        "dotenvy parse error in {} (key NOT forwarded): {}",
+                                        env_local.display(),
+                                        e
+                                    );
+                                }
                             }
                         }
                         log::info!(
-                            "loaded {} env vars from {} for sidecar",
+                            "loaded {} env vars from {} for sidecar ({} parse errors)",
                             sidecar_envs.len() - before,
-                            env_local.display()
+                            env_local.display(),
+                            errors
                         );
                     }
                     Err(e) => log::warn!("could not load env file for sidecar: {}", e),
@@ -163,6 +176,7 @@ fn main() {
             // Wait for the server to come up before opening the window.
             if !wait_for_health(port, Duration::from_secs(30)) {
                 log::error!("node sidecar did not become healthy within 30s");
+                std::process::exit(1);
             }
 
             // Tier 2: assign node to a Windows Job Object so a force-killed parent
