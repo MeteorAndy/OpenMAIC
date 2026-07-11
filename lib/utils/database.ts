@@ -448,45 +448,6 @@ export async function clearDatabase(): Promise<void> {
   log.info('Database cleared');
 }
 
-/**
- * Export database contents (for backup)
- */
-export async function exportDatabase(): Promise<{
-  stages: StageRecord[];
-  scenes: SceneRecord[];
-  chatSessions: ChatSessionRecord[];
-  playbackState: PlaybackStateRecord[];
-}> {
-  return {
-    stages: await db.stages.toArray(),
-    scenes: await db.scenes.toArray(),
-    chatSessions: await db.chatSessions.toArray(),
-    playbackState: await db.playbackState.toArray(),
-  };
-}
-
-/**
- * Import database contents (for restoring backups)
- */
-export async function importDatabase(data: {
-  stages?: StageRecord[];
-  scenes?: SceneRecord[];
-  chatSessions?: ChatSessionRecord[];
-  playbackState?: PlaybackStateRecord[];
-}): Promise<void> {
-  await db.transaction(
-    'rw',
-    [db.stages, db.scenes, db.chatSessions, db.playbackState],
-    async () => {
-      if (data.stages) await db.stages.bulkPut(data.stages);
-      if (data.scenes) await db.scenes.bulkPut(data.scenes);
-      if (data.chatSessions) await db.chatSessions.bulkPut(data.chatSessions);
-      if (data.playbackState) await db.playbackState.bulkPut(data.playbackState);
-    },
-  );
-  log.info('Database imported successfully');
-}
-
 // ==================== Convenience Query Functions ====================
 
 /**
