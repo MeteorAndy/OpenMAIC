@@ -1539,7 +1539,18 @@
     "webSearchBaseUrl": "URL Base",
     "webSearchServerConfigured": "Chave de API de busca configurada no servidor",
     "optional": "Opcional",
-    "ttsBrowserNativeTimelineNotice": "O TTS nativo do navegador não suporta os recursos de áudio da linha do tempo do editor (pré-visualizar, regenerar e narração em lote). Mude para um provedor de TTS gerenciado para gerar e gerenciar o áudio de cada linha."
+    "ttsBrowserNativeTimelineNotice": "O TTS nativo do navegador não suporta os recursos de áudio da linha do tempo do editor (pré-visualizar, regenerar e narração em lote). Mude para um provedor de TTS gerenciado para gerar e gerenciar o áudio de cada linha.",
+    "backupTitle": "Backup e Restauração",
+    "backupDescription": "Exporte todos os dados locais (salas, cenas, áudio, imagens, configurações) em um único arquivo .maic-backup ou restaure a partir de um backup anterior. A restauração sobrescreve os registros existentes com a mesma chave primária.",
+    "backupButton": "Fazer Backup de Todos os Dados",
+    "restoreButton": "Restaurar de Backup",
+    "restoreConfirmTitle": "Restaurar do backup?",
+    "restoreConfirmDescription": "Isso sobrescreverá os registros existentes com o mesmo ID e não pode ser desfeito. Certifique-se de ter um backup recente antes de continuar.",
+    "restoreConfirmInput": "Digite \"RESTORE\" para continuar",
+    "restoreConfirmPhrase": "RESTORE",
+    "backupSuccess": "Backup baixado com sucesso",
+    "restoreSuccess": "Restauração concluída, a página será recarregada em instantes",
+    "restoreFailed": "Falha na restauração, tente novamente"
   },
   "profile": {
     "title": "Perfil",

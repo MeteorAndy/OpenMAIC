@@ -1524,7 +1524,18 @@
     "voxcpmVoiceSaved": "VoxCPM 聲音已儲存",
     "voxcpmVoicesDescription": "儲存在此瀏覽器中並加入共享的客服人員聲音池。",
     "voxcpmVoicesTitle": "VoxCPM 聲音",
-    "ttsBrowserNativeTimelineNotice": "瀏覽器內建 TTS 不支援編輯器時間軸的音訊功能（試聽、重新生成、全部配音）。切換到託管 TTS 供應商即可逐句生成與管理音訊。"
+    "ttsBrowserNativeTimelineNotice": "瀏覽器內建 TTS 不支援編輯器時間軸的音訊功能（試聽、重新生成、全部配音）。切換到託管 TTS 供應商即可逐句生成與管理音訊。",
+    "backupTitle": "備份與還原",
+    "backupDescription": "將所有本機資料（課堂、場景、音訊、圖片、設定）匯出為單一 .maic-backup 檔案，或從先前的備份還原。還原會依主鍵覆寫同 ID 的現有記錄。",
+    "backupButton": "備份全部資料",
+    "restoreButton": "從備份還原",
+    "restoreConfirmTitle": "確定要從備份還原嗎？",
+    "restoreConfirmDescription": "此操作將覆寫具有相同 ID 的現有記錄，且無法復原。繼續前請確認已有近期的備份。",
+    "restoreConfirmInput": "輸入 \"RESTORE\" 繼續",
+    "restoreConfirmPhrase": "RESTORE",
+    "backupSuccess": "備份已成功下載",
+    "restoreSuccess": "還原完成，頁面即將重新整理",
+    "restoreFailed": "還原失敗，請重試"
   },
   "profile": {
     "title": "個人資料",

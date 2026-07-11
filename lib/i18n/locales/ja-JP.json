@@ -1539,7 +1539,18 @@
     "webSearchBaseUrl": "ベースURL",
     "webSearchServerConfigured": "サーバー側で検索APIキーが設定済みです",
     "optional": "任意",
-    "ttsBrowserNativeTimelineNotice": "ブラウザ内蔵 TTS はエディターのタイムライン音声機能（試聴・再生成・一括音声生成）に対応していません。マネージド TTS プロバイダーに切り替えると、行ごとの音声を生成・管理できます。"
+    "ttsBrowserNativeTimelineNotice": "ブラウザ内蔵 TTS はエディターのタイムライン音声機能（試聴・再生成・一括音声生成）に対応していません。マネージド TTS プロバイダーに切り替えると、行ごとの音声を生成・管理できます。",
+    "backupTitle": "バックアップと復元",
+    "backupDescription": "すべてのローカルデータ（教室、シーン、音声、画像、設定）を1つの .maic-backup ファイルにエクスポートするか、以前のバックアップから復元します。復元は同じ主キーの既存レコードを上書きします。",
+    "backupButton": "すべてのデータをバックアップ",
+    "restoreButton": "バックアップから復元",
+    "restoreConfirmTitle": "バックアップから復元しますか？",
+    "restoreConfirmDescription": "同じ ID の既存レコードが上書きされ、元に戻せません。続行する前に最近のバックアップがあることを確認してください。",
+    "restoreConfirmInput": "続行するには \"RESTORE\" と入力",
+    "restoreConfirmPhrase": "RESTORE",
+    "backupSuccess": "バックアップのダウンロードが完了しました",
+    "restoreSuccess": "復元が完了しました。まもなくページが再読み込みされます",
+    "restoreFailed": "復元に失敗しました。もう一度お試しください"
   },
   "profile": {
     "title": "プロフィール",

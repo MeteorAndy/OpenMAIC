@@ -1539,7 +1539,18 @@
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "服务端已配置搜索 API Key",
     "optional": "可选",
-    "ttsBrowserNativeTimelineNotice": "浏览器内置 TTS 不支持编辑器时间轴的音频功能（试听、重新生成、全部配音）。切换到托管 TTS 提供方即可逐句生成和管理音频。"
+    "ttsBrowserNativeTimelineNotice": "浏览器内置 TTS 不支持编辑器时间轴的音频功能（试听、重新生成、全部配音）。切换到托管 TTS 提供方即可逐句生成和管理音频。",
+    "backupTitle": "备份与恢复",
+    "backupDescription": "将所有本地数据（课堂、场景、音频、图片、设置）导出为一个 .maic-backup 文件，或从之前的备份恢复。恢复将按主键覆盖同 ID 的现有记录。",
+    "backupButton": "备份全部数据",
+    "restoreButton": "从备份恢复",
+    "restoreConfirmTitle": "确定从备份恢复吗？",
+    "restoreConfirmDescription": "此操作将覆盖具有相同 ID 的现有记录，且无法撤销。继续前请确保已有近期备份。",
+    "restoreConfirmInput": "输入 \"RESTORE\" 继续",
+    "restoreConfirmPhrase": "RESTORE",
+    "backupSuccess": "备份已成功下载",
+    "restoreSuccess": "恢复完成，页面即将刷新",
+    "restoreFailed": "恢复失败，请重试"
   },
   "profile": {
     "title": "个人资料",

@@ -1539,7 +1539,18 @@
     "webSearchBaseUrl": "Base URL",
     "webSearchServerConfigured": "Server-side search API key is configured",
     "optional": "Optional",
-    "ttsBrowserNativeTimelineNotice": "Browser-native TTS doesn't support the editor timeline's audio features (preview, regenerate, and bulk voiceover). Switch to a managed TTS provider to generate and manage per-line audio."
+    "ttsBrowserNativeTimelineNotice": "Browser-native TTS doesn't support the editor timeline's audio features (preview, regenerate, and bulk voiceover). Switch to a managed TTS provider to generate and manage per-line audio.",
+    "backupTitle": "Backup & Restore",
+    "backupDescription": "Export all local data (classrooms, scenes, audio, images, settings) into a single .maic-backup file, or restore from a previous backup. Restore overwrites existing records that share the same primary key.",
+    "backupButton": "Backup All Data",
+    "restoreButton": "Restore from Backup",
+    "restoreConfirmTitle": "Restore from backup?",
+    "restoreConfirmDescription": "This will overwrite existing records that share the same ID and cannot be undone. Make sure you have a recent backup before continuing.",
+    "restoreConfirmInput": "Type \"RESTORE\" to continue",
+    "restoreConfirmPhrase": "RESTORE",
+    "backupSuccess": "Backup downloaded successfully",
+    "restoreSuccess": "Restore complete, page will refresh shortly",
+    "restoreFailed": "Restore failed, please try again"
   },
   "profile": {
     "title": "Profile",

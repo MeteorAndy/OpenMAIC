@@ -1539,7 +1539,18 @@
     "webSearchBaseUrl": "기본 URL",
     "webSearchServerConfigured": "서버 측 검색 API 키가 설정되어 있습니다",
     "optional": "선택 사항",
-    "ttsBrowserNativeTimelineNotice": "브라우저 내장 TTS는 편집기 타임라인의 오디오 기능(미리듣기·다시 생성·전체 음성 생성)을 지원하지 않습니다. 관리형 TTS 공급자로 전환하면 줄별 오디오를 생성·관리할 수 있습니다."
+    "ttsBrowserNativeTimelineNotice": "브라우저 내장 TTS는 편집기 타임라인의 오디오 기능(미리듣기·다시 생성·전체 음성 생성)을 지원하지 않습니다. 관리형 TTS 공급자로 전환하면 줄별 오디오를 생성·관리할 수 있습니다.",
+    "backupTitle": "백업 및 복원",
+    "backupDescription": "모든 로컬 데이터(교실, 장면, 오디오, 이미지, 설정)를 단일 .maic-backup 파일로 내보내거나 이전 백업에서 복원합니다. 복원은 같은 기본 키의 기존 레코드를 덮어씁니다.",
+    "backupButton": "모든 데이터 백업",
+    "restoreButton": "백업에서 복원",
+    "restoreConfirmTitle": "백업에서 복원하시겠습니까?",
+    "restoreConfirmDescription": "같은 ID의 기존 레코드를 덮어쓰며 되돌릴 수 없습니다. 계속하기 전에 최근 백업이 있는지 확인하세요.",
+    "restoreConfirmInput": "계속하려면 \"RESTORE\"를 입력하세요",
+    "restoreConfirmPhrase": "RESTORE",
+    "backupSuccess": "백업이 다운로드되었습니다",
+    "restoreSuccess": "복원이 완료되었습니다. 곧 페이지가 새로고침됩니다",
+    "restoreFailed": "복원에 실패했습니다. 다시 시도해 주세요"
   },
   "profile": {
     "title": "프로필",
