@@ -125,6 +125,9 @@ fn main() {
             // localStorage survive restarts and browser data-clearing. Win/Linux
             // use data_directory; macOS 14+ uses a named WKWebsiteDataStore
             // (data_store_identifier) to opt out of Safari's ITP 7-day eviction.
+            // This is the real webview URL. tauri.conf.json's `build.devUrl` is
+            // informational only (never consulted here) but kept because some
+            // Tauri dev tooling expects the field.
             let mut builder = WebviewWindowBuilder::new(
                 app,
                 "main",

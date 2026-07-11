@@ -6,7 +6,7 @@
   "build": {
     "beforeDevCommand": "pnpm build && node scripts/prepare-standalone.mjs",
     "beforeBuildCommand": "pnpm build && node scripts/prepare-standalone.mjs",
-    "devUrl": "http://localhost:3456",
+    "devUrl": "http://127.0.0.1:47823",
     "frontendDist": "../src-tauri/resources/server"
   },
   "app": {

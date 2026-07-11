@@ -39,7 +39,8 @@
  *        }
  *      }
  *
- *    Example:
+ *    Example: (illustrative — `canvas` is no longer a dependency; for pixel→PNG
+ *    encoding use `rawToPngBuffer` from ./raw-to-png, the pure-JS zero-native-dep path)
  *    async function parseWithTesseractOCR(
  *      config: PDFParserConfig,
  *      pdfBuffer: Buffer
@@ -54,21 +55,22 @@
  *      const images: string[] = [];
  *
  *      for (let pageNum = 1; pageNum <= numPages; pageNum++) {
- *        // Render page to canvas/image
+ *        // Render page to pixels, then encode via rawToPngBuffer (pure JS).
+ *        // (Rendering to a pixel buffer is provider-specific; do NOT reintroduce
+ *        //  a native canvas dependency — see lib/pdf/raw-to-png.ts.)
  *        const page = await pdf.getPage(pageNum);
  *        const viewport = page.getViewport({ scale: 2.0 });
- *        const canvas = createCanvas(viewport.width, viewport.height);
- *        const context = canvas.getContext('2d');
- *        await page.render({ canvasContext: context, viewport }).promise;
+ *        const { width, height, data } = renderPageToPixels(page, viewport); // illustrative
+ *        const pngBuffer = rawToPngBuffer(data, width, height, 4);
  *
  *        // OCR the image
  *        const worker = await createWorker('eng+chi_sim');
- *        const { data: { text } } = await worker.recognize(canvas.toBuffer());
+ *        const { data: { text } } = await worker.recognize(pngBuffer);
  *        texts.push(text);
  *        await worker.terminate();
  *
  *        // Save image
- *        images.push(canvas.toDataURL());
+ *        images.push(`data:image/png;base64,${pngBuffer.toString('base64')}`);
  *      }
  *
  *      return {

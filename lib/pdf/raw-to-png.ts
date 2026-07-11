@@ -4,7 +4,7 @@ import { PNG } from 'pngjs';
 // width*height*4 bytes upfront, so unbounded dimensions = memory exhaustion (DoS).
 // sharp/libvips enforced similar limits internally; we must too after going pure-JS.
 const MAX_DIMENSION = 30000;
-const MAX_PIXELS = 200_000_000; // ~200 megapixels
+const MAX_PIXELS = 50_000_000; // ~50 megapixels (~200MB RGBA) — tight DoS guard
 
 /**
  * Encode raw pixel data (width × height × channels) into a PNG Buffer.
