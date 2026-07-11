@@ -10,9 +10,7 @@
     "frontendDist": "../src-tauri/resources/server"
   },
   "app": {
-    "windows": [
-      { "title": "OpenMAIC Desktop", "width": 1280, "height": 800 }
-    ],
+    "windows": [],
     "security": {
       "csp": null
     }

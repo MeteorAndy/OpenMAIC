@@ -44,15 +44,32 @@ fn bind_fixed_port() -> u16 {
     }
 }
 
-/// Resolve the bundled server.js path (resources/server/server.js).
+/// Resolve the server.js path.
+///
+/// dev (cargo run / debug): use the ORIGINAL Next standalone output at
+/// `<repo>/.next/standalone/server.js` — its node_modules symlinks (next → .pnpm →
+/// transitive deps like styled-jsx) stay valid because they point within the repo.
+/// prepare-standalone's copy under resources/server/ breaks those symlinks; fixing
+/// that for prod bundling is a follow-up (ncc bundle or outputFileTracingIncludes).
+///
+/// prod (release / bundled): use resources/server/server.js.
 fn server_path(app: &tauri::App) -> std::path::PathBuf {
+    #[cfg(debug_assertions)]
+    {
+        let dev = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("..")
+            .join(".next")
+            .join("standalone")
+            .join("server.js");
+        if dev.exists() {
+            return dev;
+        }
+    }
     let resource_dir = app.path().resource_dir().expect("resource_dir failed");
-    // In dev, resources resolve under src-tauri; in bundle, under the app resource dir.
     let candidate = resource_dir.join("server").join("server.js");
     if candidate.exists() {
         return candidate;
     }
-    // dev fallback
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
         .join("resources")
         .join("server")
