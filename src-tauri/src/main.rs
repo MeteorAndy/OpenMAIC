@@ -9,10 +9,31 @@ use tauri::{Manager, RunEvent, WebviewUrl, WebviewWindowBuilder};
 use tauri_plugin_shell::process::CommandChild;
 use tauri_plugin_shell::ShellExt;
 
-/// Find a free TCP port on 127.0.0.1.
-fn free_port() -> u16 {
-    let l = TcpListener::bind(("127.0.0.1", 0)).expect("bind failed");
-    l.local_addr().expect("local_addr failed").port()
+/// Fixed port for the node sidecar. The WebView origin is `http://127.0.0.1:<port>`,
+/// and IndexedDB / localStorage / zustand-persist stores are all partitioned by origin
+/// (scheme+host+port). A random port orphaned every user's data on each restart — the
+/// single biggest data-loss bug in the desktop port. Fixed port = stable origin.
+/// Uncommon value to dodge dev servers (3456) and common local tools.
+const SIDEKICK_PORT: u16 = 47823;
+
+/// Confirm the fixed port is free, then release it so the sidecar can bind it. On
+/// failure, exit — NEVER fall back to a random port (that reintroduces the
+/// origin-orphaning bug). A second running instance is the usual cause.
+fn bind_fixed_port() -> u16 {
+    match TcpListener::bind(("127.0.0.1", SIDEKICK_PORT)) {
+        Ok(listener) => {
+            drop(listener);
+            SIDEKICK_PORT
+        }
+        Err(e) => {
+            log::error!(
+                "Port {} unavailable ({}). Another instance may be running. Exiting.",
+                SIDEKICK_PORT,
+                e
+            );
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Resolve the bundled server.js path (resources/server/server.js).
@@ -62,7 +83,7 @@ fn main() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
-            let port = free_port();
+            let port = bind_fixed_port();
             let server_js = server_path(app);
             log::info!("spawning node sidecar: {:?} on port {}", server_js, port);
 
