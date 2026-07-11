@@ -16,6 +16,14 @@ use tauri_plugin_shell::ShellExt;
 /// Uncommon value to dodge dev servers (3456) and common local tools.
 const SIDEKICK_PORT: u16 = 47823;
 
+/// Fixed WKWebsiteDataStore identifier (macOS 14+) — gives the app a named,
+/// persistent store isolated from Safari's ITP. Must be stable across launches.
+/// Spells "OpenMAICDesk\0\x01\0\x01". No-op on non-macOS builds (cfg-gated).
+#[cfg(target_os = "macos")]
+const MACOS_DATA_STORE_ID: [u8; 16] = [
+    0x4F, 0x70, 0x65, 0x6E, 0x4D, 0x41, 0x49, 0x43, 0x44, 0x65, 0x73, 0x6B, 0x00, 0x01, 0x00, 0x01,
+];
+
 /// Confirm the fixed port is free, then release it so the sidecar can bind it. On
 /// failure, exit — NEVER fall back to a random port (that reintroduces the
 /// origin-orphaning bug). A second running instance is the usual cause.
@@ -113,14 +121,34 @@ fn main() {
             // Store the child so ExitRequested (Task 7) can kill it.
             app.manage(MutexChild(std::sync::Mutex::new(Some(child))));
 
-            WebviewWindowBuilder::new(
+            // Pin WebView data to a stable, app-owned location so IndexedDB /
+            // localStorage survive restarts and browser data-clearing. Win/Linux
+            // use data_directory; macOS 14+ uses a named WKWebsiteDataStore
+            // (data_store_identifier) to opt out of Safari's ITP 7-day eviction.
+            let mut builder = WebviewWindowBuilder::new(
                 app,
                 "main",
                 WebviewUrl::External(format!("http://127.0.0.1:{}", port).parse().unwrap()),
             )
             .title("OpenMAIC Desktop")
-            .inner_size(1280.0, 800.0)
-            .build()?;
+            .inner_size(1280.0, 800.0);
+
+            #[cfg(not(target_os = "macos"))]
+            {
+                let data_dir = app
+                    .path()
+                    .app_data_dir()
+                    .expect("app_data_dir resolved")
+                    .join("webview");
+                std::fs::create_dir_all(&data_dir).ok();
+                builder = builder.data_directory(data_dir);
+            }
+            #[cfg(target_os = "macos")]
+            {
+                builder = builder.data_store_identifier(MACOS_DATA_STORE_ID);
+            }
+
+            builder.build()?;
 
             Ok(())
         })
