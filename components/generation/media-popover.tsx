@@ -72,7 +72,12 @@ function providerModels<T extends { id: string; name: string }>(
   if (config?.replaceBuiltInModels && customModels.length > 0) {
     return customModels;
   }
-  return [...builtInModels, ...customModels];
+  // Dedupe: a model the user once added as custom may have since been promoted
+  // to built-in (or carried over from an older schema, e.g. feat→main). Keep
+  // built-in, drop the stale custom entry so we never render two items with
+  // the same id (duplicate React keys).
+  const builtInIds = new Set(builtInModels.map((m) => m.id));
+  return [...builtInModels, ...customModels.filter((m) => !builtInIds.has(m.id))];
 }
 
 export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {

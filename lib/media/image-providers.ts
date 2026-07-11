@@ -37,6 +37,7 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
     requiresApiKey: true,
     defaultBaseUrl: 'https://ark.cn-beijing.volces.com',
     models: [
+      { id: 'doubao-seedream-5-0-pro-260628', name: 'Seedream 5.0 Pro' },
       { id: 'doubao-seedream-5-0-260128', name: 'Seedream 5.0 Lite' },
       { id: 'doubao-seedream-5-0-lite-260128', name: 'Seedream 5.0 Lite (Alias)' },
       { id: 'doubao-seedream-4-5-251128', name: 'Seedream 4.5' },
