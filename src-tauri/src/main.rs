@@ -117,12 +117,46 @@ fn main() {
                 .sidecar("node")
                 .expect("node sidecar not configured in externalBin");
 
+            // Collect env vars for the sidecar. Next standalone server.js does NOT
+            // auto-load .env files (that's a `next dev`/`next start` feature), so
+            // without this the sidecar sees no provider keys and generate-classroom
+            // fails. dev: forward the repo's .env.local verbatim (single source of
+            // truth, same vars `pnpm dev` sees). prod: BYOK — user enters keys in the
+            // UI; provider-config.ts resolves unmanaged providers from the client key,
+            // no env needed, no keys shipped in the bundle.
+            let mut sidecar_envs: Vec<(String, String)> = Vec::new();
+
+            #[cfg(debug_assertions)]
+            {
+                let env_local = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                    .join("..")
+                    .join(".env.local");
+                // from_filename_iter parses the file WITHOUT touching our own process env.
+                match dotenvy::from_filename_iter(&env_local) {
+                    Ok(iter) => {
+                        let before = sidecar_envs.len();
+                        for item in iter {
+                            if let Ok((k, v)) = item {
+                                sidecar_envs.push((k, v));
+                            }
+                        }
+                        log::info!(
+                            "loaded {} env vars from {} for sidecar",
+                            sidecar_envs.len() - before,
+                            env_local.display()
+                        );
+                    }
+                    Err(e) => log::warn!("could not load env file for sidecar: {}", e),
+                }
+            }
+
+            // PORT/HOSTNAME last so .env.local can't override the fixed port.
+            sidecar_envs.push(("PORT".to_string(), port.to_string()));
+            sidecar_envs.push(("HOSTNAME".to_string(), "127.0.0.1".to_string()));
+
             let (_rx, child): (tauri::async_runtime::Receiver<_>, CommandChild) = node
                 .args([server_js.to_string_lossy().to_string()])
-                .envs([
-                    ("PORT".to_string(), port.to_string()),
-                    ("HOSTNAME".to_string(), "127.0.0.1".to_string()),
-                ])
+                .envs(sidecar_envs)
                 .spawn()
                 .expect("failed to spawn node sidecar");
 
