@@ -6,6 +6,7 @@
  *
  * Supported models:
  * - doubao-seedream-5-0-260128  (latest / Lite, text2img + img2img + multi-ref + group)
+ * - doubao-seedream-5-0-lite-260128  (explicit Lite alias)
  * - doubao-seedream-4-5-251128
  * - doubao-seedream-4-0-250828
  * - doubao-seedream-3-0-t2i-250415
@@ -23,20 +24,42 @@ const DEFAULT_MODEL = 'doubao-seedream-5-0-260128';
 const DEFAULT_BASE_URL = 'https://ark.cn-beijing.volces.com';
 
 /**
- * Map our aspect ratio + size to Seedream size format "WxH".
- * Seedream requires minimum 3,686,400 pixels total.
- * Common sizes: 2048x2048 (2K), 2560x1440 (16:9), 1920x1920.
+ * Resolves the Ark API root. A bare host (e.g. the default
+ * `https://ark.cn-beijing.volces.com`) gets the standard `/api/v3` appended; a
+ * baseUrl that already carries an `/api/...` path (e.g. a token plan's
+ * `https://ark.cn-beijing.volces.com/api/plan/v3`) is used verbatim. Trailing
+ * slashes are trimmed.
+ */
+function resolveArkRoot(baseUrl: string): string {
+  const trimmed = baseUrl.replace(/\/+$/, '');
+  return /\/api\//.test(trimmed) ? trimmed : `${trimmed}/api/v3`;
+}
+
+const SEEDREAM_MIN_PIXELS = 3_686_400;
+const SEEDREAM_MAX_PIXELS = 4_624_220; // Seedream 5.0 Pro area hard cap (400 error)
+
+/**
+ * Map our aspect ratio + size to Seedream "WxH". Seedream 5.0 Pro rejects area
+ * outside [3,686,400, 4,624,220] px (HTTP 400 "image area must be at most
+ * 4624220 pixels" — account-level cap; official 3K/4K docs exceed it, so clamp
+ * to the value the API actually enforces). Scale the requested aspect ratio
+ * into that window; floor h then w so w*h stays under the cap
+ * (h^2*ratio <= target => w*h <= target).
  */
 function resolveSeedreamSize(options: ImageGenerationOptions): string {
   if (options.width && options.height) {
-    // Ensure minimum pixel count (3,686,400)
+    const ratio = options.width / options.height;
     const pixels = options.width * options.height;
-    if (pixels < 3_686_400) {
-      // Scale up proportionally
-      const scale = Math.ceil(Math.sqrt(3_686_400 / pixels));
-      return `${options.width * scale}x${options.height * scale}`;
+    if (pixels >= SEEDREAM_MIN_PIXELS && pixels <= SEEDREAM_MAX_PIXELS) {
+      return `${options.width}x${options.height}`;
     }
-    return `${options.width}x${options.height}`;
+    // Scale to the MAX end of the window (near official 2K quality, and stays
+    // inside [MIN, MAX] after flooring — a MIN target dropped 9:16/4:3 below
+    // the lower bound). Floor h then w keeps w*h <= MAX.
+    const target = SEEDREAM_MAX_PIXELS;
+    const h = Math.floor(Math.sqrt(target / ratio));
+    const w = Math.floor(h * ratio);
+    return `${w}x${h}`;
   }
   // Default to 2K for quality
   return '2K';
@@ -53,7 +76,7 @@ export async function testSeedreamConnectivity(
   try {
     // Send a request with empty prompt — auth failure (401/403) means bad key,
     // any other error (400) means key is valid but request is intentionally bad
-    const response = await fetch(`${baseUrl}/api/v3/images/generations`, {
+    const response = await fetch(`${resolveArkRoot(baseUrl)}/images/generations`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -84,7 +107,7 @@ export async function generateWithSeedream(
 ): Promise<ImageGenerationResult> {
   const baseUrl = config.baseUrl || DEFAULT_BASE_URL;
 
-  const response = await fetch(`${baseUrl}/api/v3/images/generations`, {
+  const response = await fetch(`${resolveArkRoot(baseUrl)}/images/generations`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

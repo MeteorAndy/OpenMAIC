@@ -9,7 +9,10 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('GenerateClassroom API');
 
-export const maxDuration = 30;
+// ponytail: after() shares the route's maxDuration budget. 30s only covers
+// outline + scene 1; the full multi-scene job needs the same headroom as
+// scene-content (300s). Restored from the 300→30 regression in 776ad50.
+export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
   let requirementSnippet: string | undefined;
