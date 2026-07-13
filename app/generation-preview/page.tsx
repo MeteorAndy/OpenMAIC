@@ -22,7 +22,6 @@ import {
   generateAndStoreTTS,
 } from '@/lib/hooks/use-scene-generator';
 import { isAbortError } from '@/lib/generation/generation-retry';
-import { FOREGROUND_SCENE_RETRY_OPTIONS } from './foreground-retry';
 import {
   loadImageMapping,
   loadPdfBlob,
@@ -39,10 +38,10 @@ import { AgentRevealModal } from '@/components/agent/agent-reveal-modal';
 import { createLogger } from '@/lib/logger';
 import { type GenerationSessionState, ALL_STEPS, getActiveSteps } from './types';
 import { StepVisualizer } from './components/visualizers';
-import { resolveTaskEngineModeFromOutlineDoneEvent } from './vocational-mode';
 
 const log = createLogger('GenerationPreview');
 const OUTLINE_REVIEW_AUTO_CONTINUE_MS = 2500;
+const MAX_RETRIES = 2;
 
 function GenerationPreviewContent() {
   const router = useRouter();
@@ -550,7 +549,7 @@ function GenerationPreviewContent() {
                               directive ||
                               'Teach in the language that matches the user requirement.',
                             courseTitle: evt.courseTitle || title,
-                            taskEngineMode: resolveTaskEngineModeFromOutlineDoneEvent(evt),
+                            taskEngineMode: evt.taskEngineMode === true || evt.effectiveTaskEngineMode === true,
                           });
                           return;
                         } else if (evt.type === 'error') {
@@ -865,7 +864,7 @@ function GenerationPreviewContent() {
           requirements: currentSession.requirements,
         },
         signal,
-        FOREGROUND_SCENE_RETRY_OPTIONS,
+        { maxRetries: MAX_RETRIES },
       );
 
       if (!contentData.success || !contentData.content) {
@@ -888,7 +887,7 @@ function GenerationPreviewContent() {
           languageDirective,
         },
         signal,
-        FOREGROUND_SCENE_RETRY_OPTIONS,
+        { maxRetries: MAX_RETRIES },
       );
 
       if (!data.success || !data.scene) {
@@ -928,7 +927,7 @@ function GenerationPreviewContent() {
               action.text,
               languageDirective,
               signal,
-              FOREGROUND_SCENE_RETRY_OPTIONS,
+              { maxRetries: MAX_RETRIES },
             );
           } catch (err) {
             if (isAbortError(err)) throw err;

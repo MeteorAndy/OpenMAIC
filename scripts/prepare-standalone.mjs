@@ -26,7 +26,7 @@ cpSync(standaloneDir, dest, {
   dereference: true,
   // Next's file tracer drags the whole src-tauri/ tree (Rust target +
   // binaries, 9GB+) into .next/standalone. Exclude it or the bundle balloons.
-  filter: (s) => !s.split(/[\\/]/).includes('src-tauri'),
+  filter: (s) => !s.includes('src-tauri'),
 });
 // standalone does NOT include static or public — copy them in
 cpSync(join(root, '.next', 'static'), join(dest, '.next', 'static'), { recursive: true });

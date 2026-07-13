@@ -59,11 +59,10 @@ function isBlobRef(v: unknown): v is BlobRef {
   return !!v && typeof v === 'object' && '__blob' in (v as Record<string, unknown>);
 }
 
-function pkOf(rec: Rec, keyPath: string | string[] | undefined): string {
+function pkOf(rec: Rec, keyPath: string | undefined): string {
   // ponytail: out-of-line keys (keyPath undefined) don't occur in any MAIC table,
   // so falling back to 'id' is safe and keeps the blob path stable-typed.
   if (keyPath === undefined) return String(rec.id ?? 'noid');
-  if (Array.isArray(keyPath)) return keyPath.map((k) => String(rec[k])).join('/');
   return String(rec[keyPath]);
 }
 
@@ -83,7 +82,7 @@ export async function exportAllTables(db: Dexie): Promise<Blob> {
       tablesJson[name] = rows;
       continue;
     }
-    const kp = table.schema.primKey.keyPath;
+    const kp = table.schema.primKey.keyPath as string | undefined;
     tablesJson[name] = rows.map((rec) => {
       const out: Rec = { ...rec };
       for (const field of blobCols) {

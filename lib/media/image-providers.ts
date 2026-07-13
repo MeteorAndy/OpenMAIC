@@ -30,6 +30,7 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
   seedream: {
     id: 'seedream',
     name: 'Seedream',
+    icon: '/logos/doubao.svg',
     requiresApiKey: true,
     defaultBaseUrl: 'https://ark.cn-beijing.volces.com',
     models: [
@@ -44,6 +45,7 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
   'openai-image': {
     id: 'openai-image',
     name: 'OpenAI Image',
+    icon: '/logos/openai.svg',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.openai.com/v1',
     models: [
@@ -59,6 +61,7 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
   'qwen-image': {
     id: 'qwen-image',
     name: 'Qwen Image',
+    icon: '/logos/bailian.svg',
     requiresApiKey: true,
     defaultBaseUrl: 'https://dashscope.aliyuncs.com',
     models: [
@@ -81,6 +84,7 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
   'nano-banana': {
     id: 'nano-banana',
     name: 'Nano Banana (Gemini)',
+    icon: '/logos/gemini.svg',
     requiresApiKey: true,
     defaultBaseUrl: 'https://generativelanguage.googleapis.com',
     models: [
@@ -102,6 +106,7 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
   'minimax-image': {
     id: 'minimax-image',
     name: 'MiniMax Image',
+    icon: '/logos/minimax.svg',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.minimaxi.com',
     models: [
@@ -113,6 +118,7 @@ export const IMAGE_PROVIDERS: Record<ImageProviderId, ImageProviderConfig> = {
   'grok-image': {
     id: 'grok-image',
     name: 'Grok Image (xAI)',
+    icon: '/logos/grok.svg',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.x.ai/v1',
     models: [

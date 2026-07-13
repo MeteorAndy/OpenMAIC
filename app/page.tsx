@@ -22,7 +22,6 @@ import {
   Sparkles,
   Atom,
   X,
-  Presentation,
 } from 'lucide-react';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { LanguageSwitcher } from '@/components/language-switcher';
@@ -58,19 +57,12 @@ import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
 import { shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
-import { useImportPptx } from '@/lib/import/use-import-pptx';
 
 const log = createLogger('Home');
 
 const WEB_SEARCH_STORAGE_KEY = 'webSearchEnabled';
 const RECENT_OPEN_STORAGE_KEY = 'recentClassroomsOpen';
 const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
-
-// PPTX import is still scaffolding: `useImportPptx` has no `onImported` consumer
-// yet, so the flow only logs the parsed slides. Hide the entry point behind a
-// flag until it's wired end-to-end, so the UI doesn't expose a no-op button.
-// Enable with NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true.
-const PPTX_IMPORT_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PPTX_IMPORT === 'true';
 
 interface FormState {
   pdfFile: File | null;
@@ -166,7 +158,6 @@ function HomePage() {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchButtonRef = useRef<HTMLButtonElement>(null);
   const toolbarRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const thumbnailsRef = useRef<Record<string, Slide>>({});
 
   const replaceThumbnails = (slides: Record<string, Slide>) => {
@@ -209,13 +200,6 @@ function HomePage() {
       loadClassrooms();
     },
   );
-
-  const {
-    importing: pptxImporting,
-    fileInputRef: pptxFileInputRef,
-    triggerFileSelect: triggerPptxFileSelect,
-    handleFileChange: handlePptxFileChange,
-  } = useImportPptx();
 
   useEffect(() => {
     // Clear stale media store to prevent cross-course thumbnail contamination.
@@ -377,15 +361,6 @@ function HomePage() {
         onChange={handleFileChange}
         className="hidden"
       />
-      {PPTX_IMPORT_ENABLED && (
-        <input
-          ref={pptxFileInputRef}
-          type="file"
-          accept=".pptx,application/vnd.openxmlformats-officedocument.presentationml.presentation"
-          onChange={handlePptxFileChange}
-          className="hidden"
-        />
-      )}
       {/* ═══ Top-right pill (unchanged) ═══ */}
       <div
         ref={toolbarRef}
@@ -410,48 +385,29 @@ function HomePage() {
           </button>
           {themeOpen && (
             <div className="absolute top-full mt-2 right-0 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg overflow-hidden z-50 min-w-[140px]">
-              <button
-                onClick={() => {
-                  setTheme('light');
-                  setThemeOpen(false);
-                }}
-                className={cn(
-                  'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
-                  theme === 'light' &&
-                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-                )}
-              >
-                <Sun className="w-4 h-4" />
-                {t('settings.themeOptions.light')}
-              </button>
-              <button
-                onClick={() => {
-                  setTheme('dark');
-                  setThemeOpen(false);
-                }}
-                className={cn(
-                  'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
-                  theme === 'dark' &&
-                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-                )}
-              >
-                <Moon className="w-4 h-4" />
-                {t('settings.themeOptions.dark')}
-              </button>
-              <button
-                onClick={() => {
-                  setTheme('system');
-                  setThemeOpen(false);
-                }}
-                className={cn(
-                  'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
-                  theme === 'system' &&
-                    'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
-                )}
-              >
-                <Monitor className="w-4 h-4" />
-                {t('settings.themeOptions.system')}
-              </button>
+              {(
+                [
+                  { value: 'light', Icon: Sun, label: t('settings.themeOptions.light') },
+                  { value: 'dark', Icon: Moon, label: t('settings.themeOptions.dark') },
+                  { value: 'system', Icon: Monitor, label: t('settings.themeOptions.system') },
+                ] as const
+              ).map(({ value, Icon, label }) => (
+                <button
+                  key={value}
+                  onClick={() => {
+                    setTheme(value);
+                    setThemeOpen(false);
+                  }}
+                  className={cn(
+                    'w-full px-4 py-2 text-left text-sm hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center gap-2',
+                    theme === value &&
+                      'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400',
+                  )}
+                >
+                  <Icon className="w-4 h-4" />
+                  {label}
+                </button>
+              ))}
             </div>
           )}
         </div>
@@ -542,7 +498,6 @@ function HomePage() {
 
             {/* Textarea */}
             <textarea
-              ref={textareaRef}
               placeholder={t('upload.requirementPlaceholder')}
               className="w-full resize-none border-0 bg-transparent px-4 pt-1 pb-2 text-[13px] leading-relaxed placeholder:text-muted-foreground/40 focus:outline-none min-h-[140px] max-h-[300px]"
               value={form.requirement}
@@ -701,16 +656,6 @@ function HomePage() {
               <Upload className="size-3.5" />
               <span>{t('import.classroom')}</span>
             </button>
-            {PPTX_IMPORT_ENABLED && (
-              <button
-                onClick={triggerPptxFileSelect}
-                disabled={pptxImporting}
-                className="flex items-center gap-1.5 text-[12px] text-muted-foreground/40 hover:text-foreground/60 transition-colors"
-              >
-                <Presentation className="size-3.5" />
-                <span>{t('import.pptx')}</span>
-              </button>
-            )}
           </div>
         )}
       </motion.div>
@@ -834,18 +779,6 @@ function HomePage() {
                   {t('import.classroom')}
                 </span>
               </button>
-              {PPTX_IMPORT_ENABLED && (
-                <button
-                  onClick={triggerPptxFileSelect}
-                  disabled={pptxImporting}
-                  className="group/import-pptx grid grid-cols-[auto_0fr] hover:grid-cols-[auto_1fr] items-center gap-1 rounded-full px-1.5 py-0.5 text-[12px] text-muted-foreground/35 hover:text-muted-foreground/70 hover:bg-muted/50 transition-all duration-200 cursor-pointer"
-                >
-                  <Presentation className="size-3" />
-                  <span className="overflow-hidden opacity-0 group-hover/import-pptx:opacity-100 transition-opacity duration-200 whitespace-nowrap">
-                    {t('import.pptx')}
-                  </span>
-                </button>
-              )}
             </div>
             <div className="flex-1 h-px bg-border/40 group-hover:bg-border/70 transition-colors" />
           </div>

@@ -1,6 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
-use std::net::TcpListener;
+use std::net::{TcpListener, TcpStream};
 
 mod process_cleanup;
 use std::time::{Duration, Instant};
@@ -15,14 +15,6 @@ use tauri_plugin_shell::ShellExt;
 /// single biggest data-loss bug in the desktop port. Fixed port = stable origin.
 /// Uncommon value to dodge dev servers (3456) and common local tools.
 const SIDEKICK_PORT: u16 = 47823;
-
-/// Fixed WKWebsiteDataStore identifier (macOS 14+) — gives the app a named,
-/// persistent store isolated from Safari's ITP. Must be stable across launches.
-/// Spells "OpenMAICDesk\0\x01\0\x01". No-op on non-macOS builds (cfg-gated).
-#[cfg(target_os = "macos")]
-const MACOS_DATA_STORE_ID: [u8; 16] = [
-    0x4F, 0x70, 0x65, 0x6E, 0x4D, 0x41, 0x49, 0x43, 0x44, 0x65, 0x73, 0x6B, 0x00, 0x01, 0x00, 0x01,
-];
 
 /// Confirm the fixed port is free, then release it so the sidecar can bind it. On
 /// failure, exit — NEVER fall back to a random port (that reintroduces the
@@ -66,31 +58,14 @@ fn server_path(app: &tauri::App) -> std::path::PathBuf {
         }
     }
     let resource_dir = app.path().resource_dir().expect("resource_dir failed");
-    let candidate = resource_dir.join("server").join("server.js");
-    if candidate.exists() {
-        return candidate;
-    }
-    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("resources")
-        .join("server")
-        .join("server.js")
+    resource_dir.join("server").join("server.js")
 }
 
-/// Poll the health endpoint until it responds or timeout.
+/// Poll the sidecar port until it accepts a TCP connection or timeout.
 fn wait_for_health(port: u16, timeout: Duration) -> bool {
-    let url = format!("http://127.0.0.1:{}/api/access-code/status", port);
     let start = Instant::now();
-    let client = reqwest::blocking::Client::builder()
-        .timeout(Duration::from_millis(1000))
-        .build()
-        .unwrap();
     while start.elapsed() < timeout {
-        if client
-            .get(&url)
-            .send()
-            .map(|r| r.status().is_success())
-            .unwrap_or(false)
-        {
+        if TcpStream::connect(("127.0.0.1", port)).is_ok() {
             return true;
         }
         std::thread::sleep(Duration::from_millis(200));
@@ -100,7 +75,7 @@ fn wait_for_health(port: u16, timeout: Duration) -> bool {
 
 /// Wrapper so Task 7 can take() the child on exit.
 /// Mutex is required: Tauri State must be Send+Sync, CommandChild is not Sync.
-pub struct MutexChild(pub std::sync::Mutex<Option<CommandChild>>);
+struct MutexChild(std::sync::Mutex<Option<CommandChild>>);
 
 fn main() {
     env_logger::init();
@@ -187,9 +162,7 @@ fn main() {
             app.manage(MutexChild(std::sync::Mutex::new(Some(child))));
 
             // Pin WebView data to a stable, app-owned location so IndexedDB /
-            // localStorage survive restarts and browser data-clearing. Win/Linux
-            // use data_directory; macOS 14+ uses a named WKWebsiteDataStore
-            // (data_store_identifier) to opt out of Safari's ITP 7-day eviction.
+            // localStorage survive restarts and browser data-clearing.
             // This is the real webview URL. tauri.conf.json's `build.devUrl` is
             // informational only (never consulted here) but kept because some
             // Tauri dev tooling expects the field.
@@ -210,10 +183,6 @@ fn main() {
                     .join("webview");
                 std::fs::create_dir_all(&data_dir).ok();
                 builder = builder.data_directory(data_dir);
-            }
-            #[cfg(target_os = "macos")]
-            {
-                builder = builder.data_store_identifier(MACOS_DATA_STORE_ID);
             }
 
             builder.build()?;

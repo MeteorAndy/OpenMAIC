@@ -940,7 +940,6 @@ function KeyPointInput({
   onKeyDown: (event: KeyboardEvent<HTMLInputElement>) => void;
   placeholder: string;
 }) {
-  const ref = useRef<HTMLInputElement>(null);
   const [width, setWidth] = useState(120);
 
   useEffect(() => {
@@ -953,7 +952,6 @@ function KeyPointInput({
   return (
     <div className="inline-flex items-center gap-1">
       <input
-        ref={ref}
         type="text"
         value={value}
         onChange={(event) => onChange(event.target.value)}

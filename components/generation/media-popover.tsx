@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useCallback, useMemo, Fragment } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   Image as ImageIcon,
@@ -38,22 +38,6 @@ interface MediaPopoverProps {
   onSettingsOpen: (section: SettingsSection) => void;
 }
 
-// ─── Provider icon maps ───
-const IMAGE_PROVIDER_ICONS: Record<string, string> = {
-  seedream: '/logos/doubao.svg',
-  'openai-image': '/logos/openai.svg',
-  'qwen-image': '/logos/bailian.svg',
-  'nano-banana': '/logos/gemini.svg',
-  'grok-image': '/logos/grok.svg',
-};
-const VIDEO_PROVIDER_ICONS: Record<string, string> = {
-  seedance: '/logos/doubao.svg',
-  kling: '/logos/kling.svg',
-  veo: '/logos/gemini.svg',
-  sora: '/logos/openai.svg',
-  'grok-video': '/logos/grok.svg',
-};
-
 type TabId = 'image' | 'video' | 'tts' | 'asr';
 
 const TABS: Array<{ id: TabId; icon: LucideIcon; label: string }> = [
@@ -62,6 +46,16 @@ const TABS: Array<{ id: TabId; icon: LucideIcon; label: string }> = [
   { id: 'tts', icon: Volume2, label: 'TTS' },
   { id: 'asr', icon: Mic, label: 'ASR' },
 ];
+
+// Whether a provider's config satisfies its key requirement. Pure (no closure
+// state), so it lives at module scope rather than as a useCallback.
+function cfgOk(
+  configs: Record<string, { apiKey?: string; isServerConfigured?: boolean }>,
+  id: string,
+  needsKey: boolean,
+): boolean {
+  return !needsKey || !!configs[id]?.apiKey || !!configs[id]?.isServerConfigured;
+}
 
 export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   const { t } = useI18n();
@@ -103,21 +97,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     asr: asrEnabled,
   };
 
-  const enabledCount = [
-    imageGenerationEnabled,
-    videoGenerationEnabled,
-    ttsEnabled,
-    asrEnabled,
-  ].filter(Boolean).length;
-
-  const cfgOk = useCallback(
-    (
-      configs: Record<string, { apiKey?: string; isServerConfigured?: boolean }>,
-      id: string,
-      needsKey: boolean,
-    ) => !needsKey || !!configs[id]?.apiKey || !!configs[id]?.isServerConfigured,
-    [],
-  );
+  const enabledCount = Object.values(enabledMap).filter(Boolean).length;
 
   // ─── Grouped select data (only available providers) ───
   const imageGroups = useMemo(
@@ -127,8 +107,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
         .map((p) => ({
           groupId: p.id,
           groupName: p.name,
-          groupIcon: IMAGE_PROVIDER_ICONS[p.id],
-          available: true,
+          groupIcon: p.icon,
           items: [
             ...p.models,
             // Dedupe customModels vs built-in: a model promoted to built-in (or
@@ -142,7 +121,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
             name: m.name,
           })),
         })),
-    [cfgOk, imageProvidersConfig],
+    [imageProvidersConfig],
   );
 
   const videoGroups = useMemo(
@@ -152,8 +131,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
         .map((p) => ({
           groupId: p.id,
           groupName: p.name,
-          groupIcon: VIDEO_PROVIDER_ICONS[p.id],
-          available: true,
+          groupIcon: p.icon,
           items: [
             ...p.models,
             ...(videoProvidersConfig[p.id]?.customModels || []).filter(
@@ -164,7 +142,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
             name: m.name,
           })),
         })),
-    [cfgOk, videoProvidersConfig],
+    [videoProvidersConfig],
   );
 
   // ASR: built-in + custom providers
@@ -178,7 +156,6 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
         groupId: p.id,
         groupName: p.name,
         groupIcon: p.icon,
-        available: true,
         items: getASRSupportedLanguages(p.id).map((l) => ({
           id: l,
           name: l,
@@ -195,13 +172,12 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
       groups.push({
         groupId: id,
         groupName: providerName,
-        available: true,
         items: CUSTOM_ASR_DEFAULT_LANGUAGES.map((l) => ({ id: l, name: l })),
       });
     }
 
     return groups;
-  }, [asrProvidersConfig, cfgOk]);
+  }, [asrProvidersConfig]);
 
   // Auto-select first enabled tab on open
   const handleOpenChange = (isOpen: boolean) => {
@@ -395,7 +371,6 @@ interface SelectGroupData {
   groupId: string;
   groupName: string;
   groupIcon?: string;
-  available: boolean;
   items: Array<{ id: string; name: string }>;
 }
 
@@ -411,12 +386,7 @@ function GroupedSelect({
   onSelect: (groupId: string, itemId: string) => void;
 }) {
   const composite = `${selectedGroupId}::${selectedItemId}`;
-  // When multiple groups share the same groupId (e.g. browser-native-tts split by language),
-  // find the sub-group that actually contains the selected item.
-  const selectedGroup =
-    groups.find(
-      (g) => g.groupId === selectedGroupId && g.items.some((item) => item.id === selectedItemId),
-    ) || groups.find((g) => g.groupId === selectedGroupId);
+  const selectedGroup = groups.find((g) => g.groupId === selectedGroupId);
 
   return (
     <Select
@@ -446,11 +416,7 @@ function GroupedSelect({
             <SelectGroup>
               <SelectLabel className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider">
                 {group.groupIcon && (
-                  <img
-                    src={group.groupIcon}
-                    alt=""
-                    className={cn('size-3.5 rounded-sm', !group.available && 'opacity-40')}
-                  />
+                  <img src={group.groupIcon} alt="" className="size-3.5 rounded-sm" />
                 )}
                 {group.groupName}
               </SelectLabel>
@@ -458,7 +424,6 @@ function GroupedSelect({
                 <SelectItem
                   key={`${group.groupId}::${item.id}`}
                   value={`${group.groupId}::${item.id}`}
-                  disabled={!group.available}
                   className="text-xs"
                 >
                   {item.name}

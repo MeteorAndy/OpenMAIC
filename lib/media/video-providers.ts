@@ -23,6 +23,7 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   seedance: {
     id: 'seedance',
     name: 'Seedance',
+    icon: '/logos/doubao.svg',
     requiresApiKey: true,
     defaultBaseUrl: 'https://ark.cn-beijing.volces.com',
     models: [
@@ -45,6 +46,7 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   kling: {
     id: 'kling',
     name: 'Kling',
+    icon: '/logos/kling.svg',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api-beijing.klingai.com',
     models: [
@@ -58,6 +60,7 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   veo: {
     id: 'veo',
     name: 'Veo',
+    icon: '/logos/gemini.svg',
     requiresApiKey: true,
     defaultBaseUrl: 'https://generativelanguage.googleapis.com',
     models: [
@@ -75,6 +78,7 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   sora: {
     id: 'sora',
     name: 'Sora',
+    icon: '/logos/openai.svg',
     requiresApiKey: true,
     models: [],
     supportedAspectRatios: ['16:9', '1:1', '9:16'],
@@ -83,6 +87,7 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   'minimax-video': {
     id: 'minimax-video',
     name: 'MiniMax Video',
+    icon: '/logos/minimax.svg',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.minimaxi.com',
     // Hailuo 2.3 Fast requires Image-to-Video with first_frame_image; this
@@ -101,6 +106,7 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   'grok-video': {
     id: 'grok-video',
     name: 'Grok Video (xAI)',
+    icon: '/logos/grok.svg',
     requiresApiKey: true,
     defaultBaseUrl: 'https://api.x.ai/v1',
     models: [{ id: 'grok-imagine-video', name: 'Grok Imagine Video' }],
@@ -111,6 +117,7 @@ export const VIDEO_PROVIDERS: Record<VideoProviderId, VideoProviderConfig> = {
   happyhorse: {
     id: 'happyhorse',
     name: 'HappyHorse',
+    icon: '/logos/bailian.svg',
     requiresApiKey: true,
     defaultBaseUrl: 'https://dashscope.aliyuncs.com',
     models: [{ id: 'happyhorse-1.0-t2v', name: 'HappyHorse 1.0 T2V' }],
