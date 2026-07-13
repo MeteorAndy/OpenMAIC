@@ -11,6 +11,11 @@ MIT-licensed. See LICENSE for the full MIT terms that apply to the upstream
 portions.
 
 Bundled third-party components (see respective licenses in their directories):
-- packages/mathml2omml — LGPL-3.0-or-later. A closed-source binary that
-  bundles this library must allow end users to replace it (LGPL requirement).
+
+- packages/mathml2omml — LGPL-3.0-or-later (Copyright Johannes Wilm /
+  fiduswriter). Shipped as loose files under
+  resources/server/packages/mathml2omml/ (dist/ + src/ + LICENSE). End users
+  may replace it by overwriting that directory with a modified version and
+  restarting the app. Corresponding source: the bundled src/ directory and
+  https://github.com/fiduswriter/mathml2omml
 - packages/pptxgenjs — third-party MIT.
