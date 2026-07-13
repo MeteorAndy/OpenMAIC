@@ -496,7 +496,7 @@ function HomePage() {
         transition={{ duration: 0.6, ease: 'easeOut' }}
         className={cn(
           'relative z-20 w-full max-w-[800px] flex flex-col items-center overflow-y-auto',
-          classrooms.length === 0 ? 'justify-center min-h-[calc(100dvh-8rem)]' : 'mt-[10vh]',
+          classrooms.length === 0 ? 'justify-center min-h-[calc(100dvh-8rem)]' : 'mt-[6vh] max-h-[calc(100dvh-10rem)]',
         )}
       >
         {/* ── Logo ── */}
@@ -895,13 +895,13 @@ function HomePage() {
               </motion.div>
             )}
           </AnimatePresence>
-          {/* Footer — inside hero section, flows after content not pinned to window bottom */}
-          <div className="mt-8 pt-4 pb-4 text-center text-xs text-muted-foreground/40">
-            OpenMAIC Desktop
-          </div>
         </motion.div>
       )}
 
+      {/* Footer — shrink-0 so it sits right after content */}
+      <div className="shrink-0 pt-4 pb-4 text-center text-xs text-muted-foreground/40">
+        OpenMAIC Desktop
+      </div>
     </div>
   );
 }
