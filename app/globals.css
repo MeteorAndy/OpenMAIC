@@ -131,13 +131,10 @@
     @apply border-border outline-ring/50;
   }
   html {
-    /* Show the vertical scrollbar only when content actually overflows
-       (overflow-y: auto), not unconditionally. scrollbar-gutter: stable still
-       reserves the gutter so layout doesn't horizontally shift when content
-       grows/shrinks across the viewport-height threshold (e.g. expanding/
-       collapsing recent classrooms). */
-    scrollbar-gutter: stable;
-    overflow-y: auto;
+    /* No forced scrollbar, no reserved gutter. The scrollbar appears only when
+       content actually overflows the viewport (UA default). Desktop windows are
+       fixed-size, so the horizontal-shift concern that motivated
+       scrollbar-gutter: stable on web doesn't apply here. */
   }
   body {
     @apply bg-background text-foreground;
