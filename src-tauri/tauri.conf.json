@@ -4,7 +4,7 @@
   "version": "0.1.0",
   "identifier": "com.openmaic.desktop",
   "build": {
-    "beforeDevCommand": { "script": "pnpm build && node scripts/prepare-standalone.mjs", "wait": true },
+    "beforeDevCommand": { "script": "pnpm build", "wait": true },
     "beforeBuildCommand": "pnpm build && node scripts/prepare-standalone.mjs",
     "devUrl": "http://127.0.0.1:47823",
     "frontendDist": "../src-tauri/resources/frontend"
