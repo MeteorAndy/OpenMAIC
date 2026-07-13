@@ -1,0 +1,16 @@
+OpenMAIC Desktop
+================
+
+This software is based on OpenMAIC (https://github.com/THU-MAIC/OpenMAIC),
+Copyright (c) 2026 THU-MAIC, licensed under the MIT License (see LICENSE).
+
+Modifications and additions for the desktop edition:
+Copyright (c) 2026 MeteorAndy. The desktop integration and related
+modifications are proprietary; the underlying upstream code remains
+MIT-licensed. See LICENSE for the full MIT terms that apply to the upstream
+portions.
+
+Bundled third-party components (see respective licenses in their directories):
+- packages/mathml2omml — LGPL-3.0-or-later. A closed-source binary that
+  bundles this library must allow end users to replace it (LGPL requirement).
+- packages/pptxgenjs — third-party MIT.
