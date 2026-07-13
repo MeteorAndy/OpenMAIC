@@ -524,11 +524,6 @@ function HomePage() {
           {t('home.slogan')}
         </motion.p>
 
-        {/* Footer brand — placed high so it doesn't pin to the window bottom */}
-        <div className="mb-8 text-center text-xs text-muted-foreground/40">
-          OpenMAIC Desktop
-        </div>
-
         {/* ── Unified input area ── */}
         <motion.div
           initial={{ opacity: 0, scale: 0.97 }}
@@ -900,8 +895,13 @@ function HomePage() {
               </motion.div>
             )}
           </AnimatePresence>
+          {/* Footer — inside hero section, flows after content not pinned to window bottom */}
+          <div className="mt-8 pt-4 pb-4 text-center text-xs text-muted-foreground/40">
+            OpenMAIC Desktop
+          </div>
         </motion.div>
       )}
+
     </div>
   );
 }
