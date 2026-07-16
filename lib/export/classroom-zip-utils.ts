@@ -43,16 +43,34 @@ export async function collectMediaFiles(stageId: string): Promise<CollectedMedia
   // CDN URL (oss_key is the full public URL). N fetches replace the old Dexie
   // bulk read — bucket CORS must allow the app origin (or proxy via
   // /api/proxy-media). Failed rows (row.error / no oss_key) are skipped.
+  // Defensive caps (export is browser-side + own-data, but bound it anyway):
+  // count, per-file, cumulative, and a per-fetch timeout so a heavy course can't
+  // hang the export. oss_key is a platform CDN URL (not user-controlled input) and
+  // the fetch is client-side, so this is robustness — not server SSRF.
+  const MAX_FILES = 500;
+  const MAX_FILE_SIZE = 50 * 1024 * 1024;
+  const MAX_TOTAL_SIZE = 500 * 1024 * 1024;
+  const FETCH_TIMEOUT_MS = 30_000;
+
   const rows = await getMediaFiles(stageId);
   const collected: CollectedMedia[] = [];
+  let totalBytes = 0;
   for (const row of rows) {
+    if (collected.length >= MAX_FILES) break;
     if (row.error || !row.oss_key) continue;
     const elementId = row.element_id;
     const ext = row.mime_type?.split('/')[1] || 'jpg';
 
-    const blob = await fetch(row.oss_key).then((r) => r.blob());
+    const blob = await fetch(row.oss_key, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+      .then((r) => r.blob())
+      .catch(() => undefined);
+    if (!blob || blob.size > MAX_FILE_SIZE) continue;
+    totalBytes += blob.size;
+    if (totalBytes > MAX_TOTAL_SIZE) break;
     const poster = row.poster_oss_key
-      ? await fetch(row.poster_oss_key).then((r) => r.blob())
+      ? await fetch(row.poster_oss_key, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+          .then((r) => r.blob())
+          .catch(() => undefined)
       : undefined;
 
     // Build a MediaFileRecord so the export consumer (use-export-classroom.ts)
