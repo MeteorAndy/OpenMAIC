@@ -1,15 +1,67 @@
+# OpenMAIC SaaS (feat/saas) — local dev infra + optional app container.
+#
+# Dev (just the deps):   docker compose up -d postgres minio
+#   then `pnpm dev` locally with DATABASE_URL/S3_* from .env.local.
+# Full stack (app too):  docker compose --profile app up -d
 services:
-  openmaic:
+  postgres:
+    image: postgres:16-alpine
+    container_name: openmaic-postgres
+    environment:
+      POSTGRES_USER: openmaic
+      POSTGRES_PASSWORD: openmaic
+      POSTGRES_DB: openmaic
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U openmaic"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  minio:
+    image: minio/minio:latest
+    container_name: openmaic-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: openmaic
+      MINIO_ROOT_PASSWORD: openmaic123
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # web console
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  app:
+    profiles: ["app"]
     build: .
+    container_name: openmaic-app
     ports:
       - "3000:3000"
     env_file:
       - .env.local
+    environment:
+      # Service-namespaced URLs for in-compose networking.
+      DATABASE_URL: postgresql://openmaic:openmaic@postgres:5432/openmaic
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_BASE_URL: http://localhost:9000/openmaic-media
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
     volumes:
-      # Optional: mount server-providers.yml for provider config
-      # - ./server-providers.yml:/app/server-providers.yml:ro
       - openmaic-data:/app/data
     restart: unless-stopped
 
 volumes:
+  pgdata:
+  miniodata:
   openmaic-data:
