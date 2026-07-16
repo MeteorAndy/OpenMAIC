@@ -1,49 +1,31 @@
 /**
- * pg-boss queue (singleton over DATABASE_URL).
+ * BullMQ + Redis queue for classroom generation.
  *
- * ponytail: no new DB pool, no new Drizzle table. Job lifecycle + terminal
- * state live in pg-boss's own `pgboss` schema (installed idempotently by
- * start()). One read path (getJobById), no fs, no mutex, no stale heuristic —
- * pg-boss native expiry (expireInSeconds) replaces the old 30-min stale check.
+ * Why BullMQ (not pg-boss): native `job.updateProgress(obj)` + `job.progress` give
+ * smooth mid-flight progress (step / progress / scenesGenerated advancing live) that
+ * pg-boss has no equivalent for. Redis is the natural home for high-frequency progress
+ * writes. Lazy `getQueue()` so importing this module (the POST route at build time)
+ * does NOT open a Redis connection.
  *
- * DEVIATION FROM STAGE B SPEC (reality check): the spec assumed a pg-boss
- * `job.updateProgress()` API and a `job.progress` field. **No pg-boss version
- * (v10 or v12) has any progress concept** — those are BullMQ APIs. The spec
- * deliberately chose Postgres-backed pg-boss over Redis/BullMQ, so we honor
- * that and carry terminal progress in pg-boss's real `output` field (set on
- * complete/fail). Mid-flight polling is therefore COARSE: queued -> running ->
- * succeeded|failed, with the final result/error landing in `output`. The full
- * GET response SHAPE is unchanged (every key still present), only the running
- * progress bar stops advancing smoothly. Upgrade paths if smooth progress is
- * needed later: (a) move the queue to BullMQ+Redis (both already in deps +
- * compose), which has native updateProgress; or (b) add a tiny progress table.
+ * Exports `getJobStatus` + `isValidClassroomJobId` keep the GET poll contract stable.
  */
-import PgBoss from 'pg-boss';
+import { Queue } from 'bullmq';
+import IORedis from 'ioredis';
 import type { GenerateClassroomInput } from '@/lib/server/classroom-generation';
-
-if (!process.env.DATABASE_URL) {
-  throw new Error('DATABASE_URL is not set');
-}
 
 export const CLASSROOM_QUEUE = 'classroom-generation';
 
-const boss = new PgBoss(process.env.DATABASE_URL!);
-// start() is idempotent: installs the pgboss schema (its own tables, does NOT
-// touch our Drizzle schema) and starts maintenance. Kicked once at module load.
-const startPromise = boss.start();
-
-export async function getBoss(): Promise<PgBoss> {
-  await startPromise;
-  return boss;
-}
-
-/** Terminal payload the worker writes to the job's `output` via complete/fail. */
-export interface JobOutput {
+/** Live progress payload the worker streams via job.updateProgress(). */
+export interface JobProgress {
   step?: string;
   progress?: number;
   message?: string;
   scenesGenerated?: number;
   totalScenes?: number;
+}
+
+/** Terminal payload the worker returns as the job's returnvalue. */
+export interface JobTerminal extends JobProgress {
   result?: { classroomId: string; url: string; scenesCount: number };
   error?: string;
 }
@@ -62,88 +44,102 @@ export interface JobPollResponse {
   done: boolean;
 }
 
+export interface ClassroomJobData {
+  input: GenerateClassroomInput;
+  baseUrl: string;
+  userId: string;
+}
+
 export function isValidClassroomJobId(jobId: string): boolean {
   return /^[a-zA-Z0-9_-]+$/.test(jobId);
 }
 
+let _queue: Queue | null = null;
+
+/** Lazy singleton Queue (creates the IORedis connection on first use). */
+export function getQueue(): Queue {
+  if (_queue) return _queue;
+  if (!process.env.REDIS_URL) throw new Error('REDIS_URL is not set');
+  const connection = new IORedis(process.env.REDIS_URL, { maxRetriesPerRequest: null });
+  _queue = new Queue(CLASSROOM_QUEUE, { connection });
+  return _queue;
+}
+
 /**
- * Enqueue a classroom generation job. Returns pg-boss uuid (satisfies
- * isValidClassroomJobId). expireInSeconds:1800 reproduces the old 30-min stale
- * ceiling (pg-boss flips the job out of active on expiry if the worker dies).
- * retryLimit:0 — generation writes media/audio/JSON and is NOT idempotent.
+ * Enqueue a classroom generation job. Returns the BullMQ job id (uuid). attempts:1 +
+ * no retry — generation writes media/audio/JSON and is NOT idempotent. removeOnComplete/
+ * removeOnFail keep the queue bounded while leaving enough history for polling.
  */
 export async function enqueueClassroomJob(
   input: GenerateClassroomInput,
   baseUrl: string,
   userId: string,
 ): Promise<string> {
-  const b = await getBoss();
-  const jobId = await b.send(
-    CLASSROOM_QUEUE,
-    { input, baseUrl, userId },
-    { expireInSeconds: 1800, retryLimit: 0 },
-  );
-  if (!jobId) throw new Error('Failed to enqueue classroom generation job');
-  return jobId;
+  const job = await getQueue().add('generate', { input, baseUrl, userId } satisfies ClassroomJobData, {
+    attempts: 1,
+    removeOnComplete: 1000,
+    removeOnFail: 5000,
+  });
+  if (!job?.id) throw new Error('Failed to enqueue classroom generation job');
+  return job.id;
 }
 
 /**
- * Map a pg-boss job row onto the poll shape the GET route returns. Returns null
- * when the job no longer exists (getJobById null after archive) — caller 404s.
+ * Map a BullMQ job onto the poll response shape. Reads live `job.progress` (the
+ * JobProgress object the worker streams) for running jobs, and `job.returnvalue`
+ * (JobTerminal) on completion. Returns null when the job no longer exists (caller 404s).
  */
 export async function getJobStatus(jobId: string): Promise<JobPollResponse | null> {
-  const b = await getBoss();
-  const job = await b.getJobById(CLASSROOM_QUEUE, jobId);
+  const job = await getQueue().getJob(jobId);
   if (!job) return null;
 
-  // Widen to string so we can also match runtime states pg-boss may introduce
-  // (e.g. 'expired' from maintenance) without a TS error on the literal union.
-  const state: string = job.state;
-  const out: JobOutput =
-    job.output && typeof job.output === 'object' ? (job.output as JobOutput) : {};
+  const state: string = await job.getState();
+  const p: JobProgress =
+    job.progress && typeof job.progress === 'object' ? (job.progress as JobProgress) : {};
+  const rv: JobTerminal | undefined =
+    job.returnvalue && typeof job.returnvalue === 'object'
+      ? (job.returnvalue as JobTerminal)
+      : undefined;
 
   let status: JobPollResponse['status'];
   let step: string;
   let progress: number;
   let message: string;
-  let scenesGenerated = out.scenesGenerated ?? 0;
-  let totalScenes = out.totalScenes;
-  let result = out.result;
-  let error = out.error;
+  let scenesGenerated = p.scenesGenerated ?? 0;
+  let totalScenes = p.totalScenes;
+  let result: JobPollResponse['result'];
+  let error: string | undefined;
 
-  if (state === 'created') {
+  if (state === 'completed') {
+    status = 'succeeded';
+    step = rv?.step ?? 'completed';
+    progress = 100;
+    message = rv?.message ?? 'Classroom generation completed';
+    scenesGenerated = rv?.scenesGenerated ?? p.scenesGenerated ?? 0;
+    totalScenes = rv?.totalScenes ?? p.totalScenes;
+    result = rv?.result;
+  } else if (state === 'failed') {
+    status = 'failed';
+    step = 'failed';
+    progress = p.progress ?? 0;
+    message = p.message ?? 'Classroom generation failed';
+    error = job.failedReason ?? 'Classroom generation failed';
+  } else if (state === 'active') {
+    status = 'running';
+    step = p.step ?? 'running';
+    progress = p.progress ?? 0;
+    message = p.message ?? 'Classroom generation running';
+  } else {
+    // waiting | delayed | prioritized | ...
     status = 'queued';
     step = 'queued';
     progress = 0;
     message = 'Classroom generation job queued';
     scenesGenerated = 0;
-  } else if (state === 'active') {
-    status = 'running';
-    step = 'running';
-    progress = 0;
-    message = 'Classroom generation running';
-    scenesGenerated = 0;
-  } else if (state === 'completed') {
-    status = 'succeeded';
-    step = out.step ?? 'completed';
-    progress = 100;
-    message = out.message ?? 'Classroom generation completed';
-    result = out.result;
-  } else {
-    // failed | expired | cancelled | retry (with retryLimit:0, retry can't occur)
-    status = 'failed';
-    step = 'failed';
-    progress = out.progress ?? 0;
-    message = out.message ?? 'Classroom generation failed';
-    error =
-      out.error ??
-      (state === 'expired'
-        ? 'Job expired (worker may have restarted)'
-        : 'Classroom generation failed');
   }
 
   return {
-    jobId: job.id,
+    jobId: job.id!,
     status,
     step,
     progress,
