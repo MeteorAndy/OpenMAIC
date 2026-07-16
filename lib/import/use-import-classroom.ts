@@ -158,6 +158,16 @@ export function useImportClassroom(onSuccess?: () => void) {
         }
         let extractedBytes = 0;
 
+        // Validate mediaIndex zip paths (used as zip entry lookups + media keys):
+        // confine to an audio|media prefix, no traversal, safe filename chars only.
+        const VALID_ZIP_PATH = /^(audio|media)\/[A-Za-z0-9._-]+$/;
+        for (const zipPath of Object.keys(manifest.mediaIndex ?? {})) {
+          if (zipPath.includes('..') || !VALID_ZIP_PATH.test(zipPath)) {
+            toast.error(t('import.error.invalidManifest'), { id: toastId });
+            return;
+          }
+        }
+
         // 3. Generate new IDs
         const newStageId = nanoid();
         const now = Date.now();
@@ -255,7 +265,16 @@ export function useImportClassroom(onSuccess?: () => void) {
           let posterOssKey: string | null = null;
           if (posterEntry) {
             const posterBlob = await posterEntry.async('blob');
-            posterOssKey = (await uploadBlobToStorage(posterBlob, 'poster')) ?? null;
+            if (posterBlob.size > MAX_FILE_SIZE) {
+              log.warn(`Import: skipping oversize poster for ${zipPath} (${posterBlob.size}B)`);
+            } else {
+              extractedBytes += posterBlob.size;
+              if (extractedBytes > MAX_EXTRACTED_TOTAL) {
+                toast.error(t('import.error.invalidZip'), { id: toastId });
+                return;
+              }
+              posterOssKey = (await uploadBlobToStorage(posterBlob, 'poster')) ?? null;
+            }
           }
 
           await upsertMediaFile({
