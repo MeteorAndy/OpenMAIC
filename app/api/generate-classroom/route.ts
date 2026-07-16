@@ -5,6 +5,7 @@ import { type GenerateClassroomInput } from '@/lib/server/classroom-generation';
 import { runClassroomGenerationJob } from '@/lib/server/classroom-job-runner';
 import { createClassroomGenerationJob } from '@/lib/server/classroom-job-store';
 import { buildRequestOrigin } from '@/lib/server/classroom-storage';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('GenerateClassroom API');
@@ -41,6 +42,11 @@ export async function POST(req: NextRequest) {
     if (!requirement) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: requirement');
     }
+
+    // SaaS gate: authenticated + within plan generation quota.
+    const authed = await requireUserWithQuota();
+    if (typeof authed !== 'string') return authed;
+    void recordGeneration(authed);
 
     const baseUrl = buildRequestOrigin(req);
     const jobId = nanoid(10);

@@ -7,7 +7,7 @@
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from '@better-auth/drizzle-adapter';
 import { db } from '@/db/client';
-import { user, session, account, verification } from '@/db/schema';
+import { user, session, account, verification, subscription } from '@/db/schema';
 
 function buildSocialProviders() {
   const social: Record<string, { clientId: string; clientSecret: string }> = {};
@@ -35,4 +35,25 @@ export const auth = betterAuth({
   }),
   emailAndPassword: { enabled: true, autoSignIn: true },
   socialProviders: buildSocialProviders(),
+  databaseHooks: {
+    user: {
+      create: {
+        after: async (newUser) => {
+          // Default new sign-ups to the Free plan (run `pnpm db:seed` once first).
+          const now = new Date();
+          await db
+            .insert(subscription)
+            .values({
+              id: `sub_${newUser.id}`,
+              userId: newUser.id,
+              planId: 'free',
+              status: 'active',
+              currentPeriodStart: now,
+              currentPeriodEnd: new Date(now.getFullYear() + 100, now.getMonth(), now.getDate()),
+            })
+            .onConflictDoNothing({ target: subscription.userId });
+        },
+      },
+    },
+  },
 });

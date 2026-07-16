@@ -17,6 +17,7 @@ import { statelessGenerate } from '@/lib/orchestration/stateless-generate';
 import { isProviderKeyRequired } from '@/lib/ai/providers';
 import type { StatelessChatRequest, StatelessEvent } from '@/lib/types/chat';
 import { apiError } from '@/lib/server/api-response';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 import { createLogger } from '@/lib/logger';
 import { resolveModel } from '@/lib/server/resolve-model';
 import type { ThinkingConfig } from '@/lib/types/provider';
@@ -63,6 +64,11 @@ export async function POST(req: NextRequest) {
     if (!body.config || !body.config.agentIds || body.config.agentIds.length === 0) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing required field: config.agentIds');
     }
+
+    // SaaS gate: authenticated + within plan generation quota.
+    const authed = await requireUserWithQuota();
+    if (typeof authed !== 'string') return authed;
+    void recordGeneration(authed);
 
     const {
       model: languageModel,
