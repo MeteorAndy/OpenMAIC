@@ -30,19 +30,49 @@ export interface GenerationCost {
  */
 export async function assertGenerationQuota(userId: string): Promise<NextResponse | null> {
   const plan = await getEffectivePlan(userId);
-  if (plan.maxGenerationsPerPeriod == null) return null;
+  const { maxGenerationsPerPeriod, maxTokensPerPeriod, maxMediaSecondsPerPeriod } = plan;
+  if (
+    maxGenerationsPerPeriod == null &&
+    maxTokensPerPeriod == null &&
+    maxMediaSecondsPerPeriod == null
+  ) {
+    return null; // fully unlimited plan
+  }
   const periodStart = periodStartNow();
   const rows = await db
-    .select({ generations: usage.generations })
+    .select({
+      generations: usage.generations,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      mediaSeconds: usage.mediaSeconds,
+    })
     .from(usage)
     .where(and(eq(usage.userId, userId), eq(usage.periodStart, periodStart)))
     .limit(1);
-  const used = rows[0]?.generations ?? 0;
-  if (used >= plan.maxGenerationsPerPeriod) {
+  const u = rows[0];
+  const usedGenerations = u?.generations ?? 0;
+  const usedTokens = (u?.inputTokens ?? 0) + (u?.outputTokens ?? 0);
+  const usedMediaSeconds = u?.mediaSeconds ?? 0;
+
+  if (maxGenerationsPerPeriod != null && usedGenerations >= maxGenerationsPerPeriod) {
     return apiError(
       API_ERROR_CODES.RATE_LIMITED,
       402,
-      `Generation quota reached (${used}/${plan.maxGenerationsPerPeriod} this period on the ${plan.name} plan).`,
+      `Generation quota reached (${usedGenerations}/${maxGenerationsPerPeriod} on the ${plan.name} plan).`,
+    );
+  }
+  if (maxTokensPerPeriod != null && usedTokens >= maxTokensPerPeriod) {
+    return apiError(
+      API_ERROR_CODES.RATE_LIMITED,
+      402,
+      `Token quota reached (${usedTokens}/${maxTokensPerPeriod} on the ${plan.name} plan).`,
+    );
+  }
+  if (maxMediaSecondsPerPeriod != null && usedMediaSeconds >= maxMediaSecondsPerPeriod) {
+    return apiError(
+      API_ERROR_CODES.RATE_LIMITED,
+      402,
+      `Media quota reached (${usedMediaSeconds}s/${maxMediaSecondsPerPeriod}s on the ${plan.name} plan).`,
     );
   }
   return null;
