@@ -237,3 +237,40 @@ Consequences for shipped feat/saas work:
 Verification caveat: Supabase GoTrue/RLS **runtime** needs a running self-hosted Supabase
 (`supabase start` or official compose, ~13 services) — typecheck/build stays green here;
 the live auth/RLS flow is verified once Supabase is up locally.
+
+## 17. Local dev with self-hosted Supabase (Docker)
+
+Requires Docker. Uses the official Supabase CLI local stack (Docker under the hood).
+
+1. Install the CLI: `winget install Supabase.Cli` (Windows) / `scoop install supabase` /
+   `brew install supabase/tap/supabase` (macOS).
+2. In the repo:
+   ```
+   supabase init        # creates supabase/ scaffolding (accept defaults)
+   supabase start       # pulls + starts the local stack (Postgres, GoTrue, Storage, Realtime…)
+   supabase status      # prints API URL + anon key + service_role key + DB URL
+   ```
+3. Copy the keys into `.env.local` (from `.env.example`):
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=http://localhost:8000
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=<anon from `supabase status`>
+   SUPABASE_SERVICE_ROLE_KEY=<service_role from `supabase status`>
+   DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres
+   REDIS_URL=redis://localhost:6379
+   ```
+4. Apply schema + RLS + seed:
+   ```
+   pnpm db:migrate
+   psql "$DATABASE_URL" -f db/rls.sql      # or: supabase db execute --file db/rls.sql
+   pnpm db:seed
+   ```
+5. Start Redis + the app:
+   ```
+   docker compose up -d redis
+   pnpm dev
+   ```
+6. Smoke test: open `http://localhost:3000/signup` → register → (the `on_auth_user_created`
+   trigger auto-creates a Free subscription) → `/api/quota` returns the Free plan + zero usage.
+
+The CLI's local stack: Postgres at `localhost:5432` (postgres/postgres), the gateway
+(API/Auth/Storage/Realtime) at `localhost:8000`. First run pulls a lot of images.
