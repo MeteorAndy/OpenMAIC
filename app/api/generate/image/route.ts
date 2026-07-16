@@ -31,6 +31,7 @@ import type { ImageProviderId, ImageGenerationOptions } from '@/lib/media/types'
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 
 const log = createLogger('ImageGeneration API');
 
@@ -48,6 +49,11 @@ export async function POST(request: NextRequest) {
     if (!body.prompt) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Missing prompt');
     }
+
+    // SaaS gate: authenticated + within plan generation quota.
+    const authed = await requireUserWithQuota();
+    if (typeof authed !== 'string') return authed;
+    void recordGeneration(authed);
 
     const providerId = (request.headers.get('x-image-provider') || 'seedream') as ImageProviderId;
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.

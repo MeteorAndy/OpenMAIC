@@ -25,6 +25,7 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 
 const log = createLogger('Scene Content API');
 
@@ -75,6 +76,11 @@ export async function POST(req: NextRequest) {
     if (!stageId) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'stageId is required');
     }
+
+    // SaaS gate: authenticated + within plan generation quota.
+    const authed = await requireUserWithQuota();
+    if (typeof authed !== 'string') return authed;
+    void recordGeneration(authed);
 
     const outline: SceneOutline = { ...rawOutline };
 

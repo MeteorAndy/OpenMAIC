@@ -13,6 +13,7 @@ import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { AGENT_COLOR_PALETTE } from '@/lib/constants/agent-defaults';
 import { normalizeVoiceDesign } from '@/lib/audio/voice-design';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 
 const log = createLogger('Agent Profiles API');
 
@@ -70,6 +71,11 @@ export async function POST(req: NextRequest) {
         'availableAvatars is required and must not be empty',
       );
     }
+
+    // SaaS gate: authenticated + within plan generation quota.
+    const authed = await requireUserWithQuota();
+    if (typeof authed !== 'string') return authed;
+    void recordGeneration(authed);
 
     // ── Model resolution from request headers/body ──
     const {

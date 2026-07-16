@@ -37,6 +37,7 @@ import { apiError } from '@/lib/server/api-response';
 import { createLogger } from '@/lib/logger';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 const log = createLogger('Outlines Stream');
 
 export const maxDuration = 300;
@@ -299,6 +300,11 @@ export async function POST(req: NextRequest) {
     if (!body.requirements) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Requirements are required');
     }
+
+    // SaaS gate: authenticated + within plan generation quota.
+    const authed = await requireUserWithQuota();
+    if (typeof authed !== 'string') return authed;
+    void recordGeneration(authed);
 
     const { requirements, pdfText, pdfImages, imageMapping, researchContext, agents } = body as {
       requirements: UserRequirements;

@@ -30,6 +30,7 @@ import {
   getVoiceRegistrationAdapter,
   type VoiceRegistrationConfig,
 } from '@/lib/audio/voice-registration';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 
 const log = createLogger('Voice Registration API');
 
@@ -81,6 +82,11 @@ export async function POST(req: NextRequest) {
         `Provider "${providerId}" does not support voice registration`,
       );
     }
+
+    // SaaS gate: authenticated + within plan generation quota.
+    const authed = await requireUserWithQuota();
+    if (typeof authed !== 'string') return authed;
+    void recordGeneration(authed);
 
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
     const managed = isServerConfiguredProvider('tts', providerId);

@@ -9,6 +9,7 @@ import type { ASRProviderId } from '@/lib/audio/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 const log = createLogger('Transcription');
 
 export const maxDuration = 60;
@@ -28,6 +29,11 @@ export async function POST(req: NextRequest) {
     if (!audioFile) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Audio file is required');
     }
+
+    // SaaS gate: authenticated + within plan generation quota.
+    const authed = await requireUserWithQuota();
+    if (typeof authed !== 'string') return authed;
+    void recordGeneration(authed);
 
     // providerId is required from the client — no server-side store to fall back to
     const effectiveProviderId = providerId || ('openai-whisper' as ASRProviderId);

@@ -16,6 +16,7 @@ import { buildToolset } from '@/lib/agent/tools/registry';
 import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import type { SceneContext } from '@/lib/agent/tools/regenerate-scene-actions';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 
 const log = createLogger('MAIC Agent');
 
@@ -86,6 +87,11 @@ export async function POST(req: NextRequest) {
   if (!message) {
     return new Response('message is required', { status: 400 });
   }
+
+  // SaaS gate: authenticated + within plan generation quota.
+  const authed = await requireUserWithQuota();
+  if (typeof authed !== 'string') return authed;
+  void recordGeneration(authed);
 
   // Resolve via the 'maic-agent' stage so operators can route the editor agent
   // to a dedicated model via MODEL_ROUTES (per-stage config). When unrouted it

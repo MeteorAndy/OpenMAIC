@@ -22,6 +22,7 @@ import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { validateUrlForSSRF } from '@/lib/server/ssrf-guard';
 import { VOXCPM_AUTO_VOICE_ID, VOXCPM_TTS_PROVIDER_ID } from '@/lib/audio/voxcpm';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 
 const log = createLogger('TTS API');
 
@@ -86,6 +87,11 @@ export async function POST(req: NextRequest) {
         'VoxCPM Auto Voice requires agent context',
       );
     }
+
+    // SaaS gate: authenticated + within plan generation quota.
+    const authed = await requireUserWithQuota();
+    if (typeof authed !== 'string') return authed;
+    void recordGeneration(authed);
 
     // Managed providers are admin-owned: ignore any client-sent key/baseUrl.
     const managed = isServerConfiguredProvider('tts', ttsProviderId);

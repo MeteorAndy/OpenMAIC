@@ -138,3 +138,66 @@ data (SaaS branch starts server-fresh).
 
 MIT permits commercial SaaS deployment — no change required. NOTICE gets a one-line
 note describing the commercial hosted-service form. `mathml2omml` LGPL handling unchanged.
+
+## 14. Status (as built on feat/saas)
+
+Shipped:
+- **Phase 1** DB foundation — Drizzle schema (auth + business + commerce), `db/client`,
+  migrations, `docker-compose.yml` (postgres + minio + opt-in app).
+- **Phase 2** Auth — better-auth (email/password + optional OAuth), session-cookie
+  middleware gate (`ACCESS_CODE` kept as dev fallback), `/login` + `/signup`,
+  `getCurrentSession` / `requireUserId`.
+- **Phase 5** Metering + quota — `plans`/`subscription`/`usage`, Free/Pro/Team caps,
+  `assertGenerationQuota` (generation/token/media caps) + `recordGeneration`,
+  signup auto-creates a Free subscription, `db:seed`, `/api/quota`.
+- **Phase 6** Object storage — S3-compatible provider + env-based selection
+  (`getStorageProvider`), `/api/assets/upload`.
+- **Phase 7** Deploy — existing multi-stage `Dockerfile` already handles the native
+  deps (sharp/canvas) + Next standalone; SaaS adds only pure-JS deps.
+
+### Course data server-canonicalization — deferred (was Phase 3/4)
+
+Investigation on `main` showed the app still persists courses via the legacy Dexie
+layer (`lib/utils/database.ts`, `lib/utils/stage-storage.ts`); `@openmaic/storage`'s
+`DocumentStore` is built + contract-tested but **not yet adopted by the app**, and its
+roadmap lists `[ ] HTTP backend + reference server`. So "server-canonical course data"
+done right = first migrate the app onto `DocumentStore`, then add its HTTP/Postgres
+backend — a separate, sizable project. Building a parallel `lib/client/repo` now would
+be a competing abstraction (slop). The skeleton therefore ships **local-first course
+data + server-side gated/metered generation** — a valid, commercializable stance
+("pay for the generation engine"). The server-canonical course-data path is the
+documented next decision, with three options: full `DocumentStore` HTTP-backend
+migration; lightweight client→server course sync; or keep local-first-generation-gated.
+
+### Metering coverage
+
+All billable, client-facing generation routes are quota-gated via
+`requireUserWithQuota()` (authenticated + within plan caps) and record one generation:
+`generate-classroom`, `chat`, `generate/{image,tts,video,voice,scene-content,scene-actions,
+scene-outlines-stream,agent-profiles}`, `pbl/*`, `agent/edit`, `quiz-grade`, `web-search`,
+`transcription`. (Verified these routes are client-entry-only — the classroom job runner
+calls generation libs directly, not the routes, so gating does not break it.)
+
+## 15. Run / deploy
+
+```bash
+# 1. infra
+docker compose up -d postgres minio
+
+# 2. env (copy .env.example → .env.local): set AUTH_SECRET, DATABASE_URL, S3_*
+
+# 3. schema + seed
+DATABASE_URL=… pnpm db:migrate
+DATABASE_URL=… pnpm db:seed          # Free/Pro/Team plans
+
+# 4. dev
+pnpm dev
+
+# 5. create the media bucket once (MinIO)
+#    aws --endpoint-url $S3_ENDPOINT s3 mb s3://$S3_BUCKET
+```
+
+Production container (`docker compose --profile app up`) runs `node server.js` from the
+Next standalone build; apply `db:migrate` + `db:seed` as a deploy step (the builder image
+has the tooling). The SaaS branch requires Postgres + `AUTH_SECRET` to run (server imports
+the DB client eagerly).

@@ -39,6 +39,7 @@ import {
   runTaskEvaluation,
 } from '@/lib/pbl/v2/agents/evaluator';
 import type { PBLProjectV2 } from '@/lib/pbl/v2/types';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 
 export const maxDuration = 300;
 
@@ -78,6 +79,11 @@ export async function POST(req: NextRequest) {
   if (body.kind === 'milestone' && !body.milestoneId) {
     return apiError('MISSING_REQUIRED_FIELD', 400, "kind='milestone' requires milestoneId.");
   }
+
+  // SaaS gate: authenticated + within plan generation quota.
+  const authed = await requireUserWithQuota();
+  if (typeof authed !== 'string') return authed;
+  void recordGeneration(authed);
 
   let resolved;
   try {

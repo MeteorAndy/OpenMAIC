@@ -20,6 +20,7 @@ import type { AICallFn } from '@/lib/generation/pipeline-types';
 import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import { resolveWebSearchRouteBaseUrl } from '@/lib/server/web-search-config';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 
 const log = createLogger('WebSearch');
 
@@ -72,6 +73,11 @@ export async function POST(req: NextRequest) {
       const message = error instanceof Error ? error.message : 'Invalid web search base URL';
       return apiError('INVALID_REQUEST', 400, message);
     }
+
+    // SaaS gate: authenticated + within plan generation quota.
+    const authed = await requireUserWithQuota();
+    if (typeof authed !== 'string') return authed;
+    void recordGeneration(authed);
 
     // Clamp rewrite input at the route boundary; framework body limits still apply to total request size.
     const boundedPdfText = pdfText?.slice(0, SEARCH_QUERY_REWRITE_EXCERPT_LENGTH);

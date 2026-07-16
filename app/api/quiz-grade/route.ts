@@ -10,6 +10,7 @@ import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 const log = createLogger('Quiz Grade');
 
 interface GradeRequest {
@@ -42,6 +43,11 @@ export async function POST(req: NextRequest) {
     if (!points || !Number.isFinite(points) || points <= 0) {
       return apiError('INVALID_REQUEST', 400, 'points must be a positive number');
     }
+
+    // SaaS gate: authenticated + within plan generation quota.
+    const authed = await requireUserWithQuota();
+    if (typeof authed !== 'string') return authed;
+    void recordGeneration(authed);
 
     // Resolve model from request headers/body
     const { model: languageModel, thinkingConfig } = await resolveModelFromRequest(

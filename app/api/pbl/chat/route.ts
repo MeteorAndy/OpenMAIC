@@ -11,6 +11,7 @@ import type { PBLAgent, PBLIssue } from '@/lib/pbl/types';
 import { createLogger } from '@/lib/logger';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
+import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 const log = createLogger('PBL Chat');
 
 interface PBLChatRequest {
@@ -34,6 +35,11 @@ export async function POST(req: NextRequest) {
     if (!message || !agent) {
       return apiError('MISSING_REQUIRED_FIELD', 400, 'Message and agent are required');
     }
+
+    // SaaS gate: authenticated + within plan generation quota.
+    const authed = await requireUserWithQuota();
+    if (typeof authed !== 'string') return authed;
+    void recordGeneration(authed);
 
     // Get model config from request headers/body
     const { model, thinkingConfig } = await resolveModelFromRequest(req, body, 'pbl-chat');
