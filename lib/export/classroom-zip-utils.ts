@@ -2,6 +2,7 @@ import type { Action, DiscussionAction, SpeechAction } from '@/lib/types/action'
 import type { ManifestAction } from './classroom-zip-types';
 import { db } from '@/lib/utils/database';
 import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
+import { getMediaFiles } from '@/lib/supabase/queries';
 import type { Scene } from '@/lib/types/stage';
 
 // ─── Export: Collect Media ─────────────────────────────────────
@@ -38,11 +39,36 @@ export async function collectAudioFiles(scenes: Scene[]): Promise<CollectedAudio
 }
 
 export async function collectMediaFiles(stageId: string): Promise<CollectedMedia[]> {
-  const records = await db.mediaFiles.where('stageId').equals(stageId).toArray();
+  // Media metadata now lives in Supabase; bytes are fetched per file from the
+  // CDN URL (oss_key is the full public URL). N fetches replace the old Dexie
+  // bulk read — bucket CORS must allow the app origin (or proxy via
+  // /api/proxy-media). Failed rows (row.error / no oss_key) are skipped.
+  const rows = await getMediaFiles(stageId);
   const collected: CollectedMedia[] = [];
-  for (const record of records) {
-    const elementId = record.id.includes(':') ? record.id.split(':').slice(1).join(':') : record.id;
-    const ext = record.mimeType?.split('/')[1] || 'jpg';
+  for (const row of rows) {
+    if (row.error || !row.oss_key) continue;
+    const elementId = row.element_id;
+    const ext = row.mime_type?.split('/')[1] || 'jpg';
+
+    const blob = await fetch(row.oss_key).then((r) => r.blob());
+    const poster = row.poster_oss_key
+      ? await fetch(row.poster_oss_key).then((r) => r.blob())
+      : undefined;
+
+    // Build a MediaFileRecord so the export consumer (use-export-classroom.ts)
+    // reads record.{blob,poster,mimeType,size,prompt} unchanged.
+    const record: MediaFileRecord = {
+      id: row.id,
+      stageId: row.course_id,
+      type: row.type,
+      blob,
+      mimeType: row.mime_type,
+      size: row.size,
+      prompt: row.prompt ?? '',
+      params: '',
+      poster,
+      createdAt: row.created_at ? new Date(row.created_at).getTime() : 0,
+    };
     collected.push({ zipPath: `media/${elementId}.${ext}`, record, elementId });
   }
   return collected;

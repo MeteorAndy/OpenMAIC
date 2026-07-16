@@ -2,13 +2,13 @@
  * Media Generation Store
  *
  * Tracks per-element media generation status (pending → generating → done/failed).
- * Drives skeleton loading in slide renderer components.
- * Persistence is handled by IndexedDB (mediaFiles table), not Zustand middleware.
+ * Drives skeleton loading in slide renderer components. Persistence is handled by
+ * the Supabase media_file table (+ object storage for blobs), not Zustand middleware.
  */
 
 import { create } from 'zustand';
 import type { MediaGenerationRequest } from '@/lib/media/types';
-import { db } from '@/lib/utils/database';
+import { getMediaFiles } from '@/lib/supabase/queries';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('MediaGenerationStore');
@@ -27,8 +27,8 @@ export interface MediaTask {
     style?: string;
     duration?: number;
   };
-  objectUrl?: string; // URL.createObjectURL() for rendering
-  poster?: string; // Video poster objectUrl
+  objectUrl?: string; // CDN URL (oss_key) for rendering; was a blob: URL pre-C4
+  poster?: string; // Video poster CDN URL (poster_oss_key)
   error?: string;
   errorCode?: string; // Structured error code (e.g. 'CONTENT_SENSITIVE')
   retryCount: number;
@@ -159,39 +159,36 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
 
   restoreFromDB: async (stageId) => {
     try {
-      const records = await db.mediaFiles.where('stageId').equals(stageId).toArray();
+      // Media metadata now lives in Supabase (media_file); oss_key is the full
+      // public CDN URL, so no blob fetch / URL.createObjectURL happens here.
+      const rows = await getMediaFiles(stageId);
       const restored: Record<string, MediaTask> = {};
-      for (const rec of records) {
-        // Extract elementId from compound key (stageId:elementId)
-        const elementId = rec.id.includes(':') ? rec.id.split(':').slice(1).join(':') : rec.id;
-        const params = JSON.parse(rec.params || '{}');
+      for (const row of rows) {
+        const elementId = row.element_id;
+        const params = (row.params ?? {}) as MediaTask['params'];
 
-        if (rec.error) {
-          // Restore as failed task (persisted non-retryable error)
+        if (row.error) {
+          // Persisted non-retryable failure — surface so retryMediaTask can re-run.
           restored[elementId] = {
             elementId,
-            type: rec.type,
+            type: row.type,
             status: 'failed',
-            prompt: rec.prompt,
+            prompt: row.prompt ?? '',
             params,
-            error: rec.error,
-            errorCode: rec.errorCode,
+            error: row.error,
+            errorCode: row.error_code ?? undefined,
             retryCount: 0,
             stageId,
           };
         } else {
-          // Re-wrap blob with stored mimeType — IndexedDB may drop Blob.type
-          const blob = rec.blob.type ? rec.blob : new Blob([rec.blob], { type: rec.mimeType });
-          const objectUrl = URL.createObjectURL(blob);
-          const poster = rec.poster ? URL.createObjectURL(rec.poster) : undefined;
           restored[elementId] = {
             elementId,
-            type: rec.type,
+            type: row.type,
             status: 'done',
-            prompt: rec.prompt,
+            prompt: row.prompt ?? '',
             params,
-            objectUrl,
-            poster,
+            objectUrl: row.oss_key ?? undefined,
+            poster: row.poster_oss_key ?? undefined,
             retryCount: 0,
             stageId,
           };
@@ -211,9 +208,11 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
       for (const [id, task] of Object.entries(s.tasks)) {
         if (task.stageId !== stageId) {
           remaining[id] = task;
-        } else if (task.objectUrl) {
-          URL.revokeObjectURL(task.objectUrl);
-          if (task.poster) URL.revokeObjectURL(task.poster);
+        } else {
+          // objectUrl/poster are now CDN URLs (https), so revoke is a no-op;
+          // guard keeps it correct if a blob: URL ever sneaks in.
+          if (task.objectUrl?.startsWith('blob:')) URL.revokeObjectURL(task.objectUrl);
+          if (task.poster?.startsWith('blob:')) URL.revokeObjectURL(task.poster);
         }
       }
       return { tasks: remaining };
@@ -222,8 +221,8 @@ export const useMediaGenerationStore = create<MediaGenerationState>()((set, get)
   revokeObjectUrls: () => {
     const tasks = get().tasks;
     for (const task of Object.values(tasks)) {
-      if (task.objectUrl) URL.revokeObjectURL(task.objectUrl);
-      if (task.poster) URL.revokeObjectURL(task.poster);
+      if (task.objectUrl?.startsWith('blob:')) URL.revokeObjectURL(task.objectUrl);
+      if (task.poster?.startsWith('blob:')) URL.revokeObjectURL(task.poster);
     }
   },
 }));

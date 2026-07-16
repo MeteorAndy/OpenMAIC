@@ -3,12 +3,16 @@
  *
  * Dispatches media generation API calls for all mediaGenerations across outlines.
  * Runs entirely on the frontend — calls /api/generate/image and /api/generate/video,
- * fetches result blobs, stores in IndexedDB, and updates the Zustand store.
+ * fetches result blobs, uploads them to object storage (oss_key), persists the
+ * media_file metadata row to Supabase, and updates the Zustand store with the
+ * CDN URL.
  */
 
 import { useMediaGenerationStore } from '@/lib/store/media-generation';
 import { useSettingsStore } from '@/lib/store/settings';
-import { db, mediaFileKey } from '@/lib/utils/database';
+import { mediaFileKey } from '@/lib/utils/database';
+import { upsertMediaFile, deleteMediaFile } from '@/lib/supabase/queries';
+import { uploadBlobToStorage } from '@/lib/storage/client';
 import type { SceneOutline } from '@/lib/types/generation';
 import type { MediaGenerationRequest } from '@/lib/media/types';
 import { createLogger } from '@/lib/logger';
@@ -82,9 +86,10 @@ export async function retryMediaTask(elementId: string): Promise<void> {
     return;
   }
 
-  // Remove persisted failure record from DB so a fresh result can be written
+  // Remove persisted failure record so a fresh result can be written. Metadata
+  // row only; oss-object cleanup is deferred (bucket lifecycle, see queries.ts).
   const dbKey = mediaFileKey(task.stageId, elementId);
-  await db.mediaFiles.delete(dbKey).catch(() => {});
+  await deleteMediaFile(dbKey).catch(() => {});
 
   store.markPendingForRetry(elementId);
   await generateSingleMedia(
@@ -127,31 +132,46 @@ async function generateSingleMedia(
 
     if (abortSignal?.aborted) return;
 
-    // Fetch blob from URL
+    // Fetch blob from the result URL (need bytes + size for the upload).
     const blob = await fetchAsBlob(resultUrl);
-    const posterBlob = posterUrl ? await fetchAsBlob(posterUrl).catch(() => undefined) : undefined;
 
-    // Store in IndexedDB
-    await db.mediaFiles.put({
+    // Upload the media blob to object storage -> public CDN URL (ossKey).
+    const ossKey = await uploadBlobToStorage(blob, 'media', abortSignal);
+    if (!ossKey) {
+      // Storage unconfigured (NoopStorageProvider) or upload failed — never
+      // write a row that points at a missing object. Fail loudly.
+      throw new MediaApiError(
+        'Media upload failed: object storage unavailable',
+        'STORAGE_UNAVAILABLE',
+      );
+    }
+
+    // Video poster: fetch + upload (best-effort; poster is optional).
+    let posterOssKey: string | undefined;
+    if (posterUrl) {
+      const posterBlob = await fetchAsBlob(posterUrl).catch(() => undefined);
+      if (posterBlob) {
+        posterOssKey = (await uploadBlobToStorage(posterBlob, 'poster', abortSignal)) ?? undefined;
+      }
+    }
+
+    if (abortSignal?.aborted) return;
+
+    const params = { aspectRatio: req.aspectRatio, style: req.style };
+    await upsertMediaFile({
       id: mediaFileKey(stageId, req.elementId),
-      stageId,
+      courseId: stageId,
       type: req.type,
-      blob,
       mimeType,
       size: blob.size,
-      poster: posterBlob,
       prompt: req.prompt,
-      params: JSON.stringify({
-        aspectRatio: req.aspectRatio,
-        style: req.style,
-      }),
-      createdAt: Date.now(),
+      params,
+      ossKey,
+      posterOssKey: posterOssKey ?? null,
     });
 
-    // Update store with object URL
-    const objectUrl = URL.createObjectURL(blob);
-    const posterObjectUrl = posterBlob ? URL.createObjectURL(posterBlob) : undefined;
-    useMediaGenerationStore.getState().markDone(req.elementId, objectUrl, posterObjectUrl);
+    // Store now holds the real CDN URL (https://...), not a blob: URL.
+    useMediaGenerationStore.getState().markDone(req.elementId, ossKey, posterOssKey);
   } catch (err) {
     if (abortSignal?.aborted) return;
     const message = err instanceof Error ? err.message : String(err);
@@ -159,26 +179,21 @@ async function generateSingleMedia(
     log.error(`Failed ${req.elementId}:`, message);
     useMediaGenerationStore.getState().markFailed(req.elementId, message, errorCode);
 
-    // Persist non-retryable failures to IndexedDB so they survive page refresh
+    // Persist non-retryable failures (metadata-only: no blob, no ossKey) so they
+    // survive page refresh. row.error surfaces as a failed task on restore, and
+    // retryMediaTask re-uploads after deleteMediaFile.
     if (errorCode) {
-      await db.mediaFiles
-        .put({
-          id: mediaFileKey(stageId, req.elementId),
-          stageId,
-          type: req.type,
-          blob: new Blob(), // empty placeholder
-          mimeType: req.type === 'image' ? 'image/png' : 'video/mp4',
-          size: 0,
-          prompt: req.prompt,
-          params: JSON.stringify({
-            aspectRatio: req.aspectRatio,
-            style: req.style,
-          }),
-          error: message,
-          errorCode,
-          createdAt: Date.now(),
-        })
-        .catch(() => {}); // best-effort
+      await upsertMediaFile({
+        id: mediaFileKey(stageId, req.elementId),
+        courseId: stageId,
+        type: req.type,
+        mimeType: req.type === 'image' ? 'image/png' : 'video/mp4',
+        size: 0,
+        prompt: req.prompt,
+        params: { aspectRatio: req.aspectRatio, style: req.style },
+        error: message,
+        errorCode,
+      }).catch(() => {}); // best-effort
     }
   }
 }

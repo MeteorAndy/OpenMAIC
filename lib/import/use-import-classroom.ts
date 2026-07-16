@@ -5,9 +5,15 @@ import { nanoid } from 'nanoid';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { db, mediaFileKey } from '@/lib/utils/database';
-import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
+import type { AudioFileRecord } from '@/lib/utils/database';
 import { makeScene, type Stage, type Scene } from '@/lib/types/stage';
-import { upsertCourse, replaceGeneratedAgents, replaceScenes } from '@/lib/supabase/queries';
+import {
+  upsertCourse,
+  replaceGeneratedAgents,
+  replaceScenes,
+  upsertMediaFile,
+} from '@/lib/supabase/queries';
+import { uploadBlobToStorage } from '@/lib/storage/client';
 import type { ClassroomManifest, ManifestScene } from '@/lib/export/classroom-zip-types';
 import { rewriteAudioRefsToIds } from '@/lib/export/classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
@@ -135,33 +141,44 @@ export function useImportClassroom(onSuccess?: () => void) {
           await db.audioFiles.put(record);
         }
 
-        // Write generated media files one at a time
+        // Upload + upsert generated media files one at a time (best-effort:
+        // an upload failure skips that one file rather than aborting the import).
+        // id (newId) is already the compound mediaFileKey(newStageId, elementId).
         for (const [zipPath, newId] of Object.entries(mediaRefToNewId)) {
           const zipEntry = zip.file(zipPath);
           if (!zipEntry) continue;
           const blob = await zipEntry.async('blob');
           const meta = manifest.mediaIndex[zipPath];
+          const type = meta.mimeType?.startsWith('video/') ? 'video' : 'image';
+          const mimeType = meta.mimeType || 'image/jpeg';
 
-          const record: MediaFileRecord = {
-            id: newId,
-            stageId: newStageId,
-            type: meta.mimeType?.startsWith('video/') ? 'video' : 'image',
-            blob,
-            mimeType: meta.mimeType || 'image/jpeg',
-            size: meta.size || blob.size,
-            prompt: meta.prompt || '',
-            params: '',
-            createdAt: now,
-          };
-
-          // Check for poster before writing to avoid redundant put
-          const posterPath = zipPath.replace(/\.\w+$/, '.poster.jpg');
-          const posterEntry = zip.file(posterPath);
-          if (posterEntry) {
-            record.poster = await posterEntry.async('blob');
+          const ossKey = await uploadBlobToStorage(blob, 'media');
+          if (!ossKey) {
+            log.warn(`Import: skipping media ${zipPath} (object storage upload failed)`);
+            continue;
           }
 
-          await db.mediaFiles.put(record);
+          // Poster entry (optional): upload separately as type 'poster'.
+          const posterPath = zipPath.replace(/\.\w+$/, '.poster.jpg');
+          const posterEntry = zip.file(posterPath);
+          let posterOssKey: string | null = null;
+          if (posterEntry) {
+            const posterBlob = await posterEntry.async('blob');
+            posterOssKey = (await uploadBlobToStorage(posterBlob, 'poster')) ?? null;
+          }
+
+          await upsertMediaFile({
+            id: newId,
+            courseId: newStageId,
+            type,
+            mimeType,
+            size: meta.size || blob.size,
+            prompt: meta.prompt || '',
+            params: {},
+            ossKey,
+            posterOssKey,
+            createdAt: now,
+          });
         }
 
         // 5. Write course data

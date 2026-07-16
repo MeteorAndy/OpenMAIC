@@ -21,3 +21,15 @@ try {
 } catch {
   // .env.local not found, skip
 }
+
+// lib/supabase/queries.ts eagerly creates a browser client at module load
+// (createClient -> createBrowserClient), which throws when the URL/key are
+// absent. Many tests transitively import the media store (and thus queries),
+// so guarantee non-empty placeholders when a real Supabase config isn't
+// provided. Tests that exercise real Supabase set their own env.
+if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+  process.env.NEXT_PUBLIC_SUPABASE_URL = 'http://localhost:54321';
+}
+if (!process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY = 'test-anon-key';
+}

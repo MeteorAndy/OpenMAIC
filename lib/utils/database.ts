@@ -537,7 +537,6 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
       db.chatSessions,
       db.playbackState,
       db.stageOutlines,
-      db.mediaFiles,
       db.generatedAgents,
       db.agentEditSessions,
     ],
@@ -547,7 +546,8 @@ export async function deleteStageWithRelatedData(stageId: string): Promise<void>
       await db.chatSessions.where('stageId').equals(stageId).delete();
       await db.playbackState.delete(stageId);
       await db.stageOutlines.delete(stageId);
-      await db.mediaFiles.where('stageId').equals(stageId).delete();
+      // media_file moved to Supabase + object storage (C4); cleared via
+      // deleteCourse CASCADE in stage-storage.deleteStageData.
       await db.generatedAgents.where('stageId').equals(stageId).delete();
       await db.agentEditSessions.where('stageId').equals(stageId).delete();
     },
@@ -580,7 +580,6 @@ export async function getDatabaseStats() {
     chatSessions: await db.chatSessions.count(),
     playbackState: await db.playbackState.count(),
     stageOutlines: await db.stageOutlines.count(),
-    mediaFiles: await db.mediaFiles.count(),
     generatedAgents: await db.generatedAgents.count(),
   };
 }

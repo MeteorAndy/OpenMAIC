@@ -6,9 +6,7 @@
  */
 
 import { Stage, Scene } from '../types/stage';
-import { isSlideContent } from '../types/stage';
 import { ChatSession } from '../types/chat';
-import { db } from './database';
 import { saveChatSessions, loadChatSessions, deleteChatSessions } from './chat-storage';
 import {
   upsertCourse,
@@ -19,6 +17,7 @@ import {
   renameCourse,
   courseExists,
   deleteCourse,
+  getFirstSlideByStages as getFirstSlideByStagesFromQueries,
   type CourseOutline,
 } from '@/lib/supabase/queries';
 import { clearPlaybackState } from './playback-storage';
@@ -183,33 +182,6 @@ type ThumbnailMediaElement = {
 
 type ThumbnailSlide = import('@openmaic/dsl').Slide;
 
-function isGeneratedMediaRef(value: unknown): value is string {
-  return typeof value === 'string' && /^gen_(img|vid)_[\w-]+$/i.test(value);
-}
-
-function isLegacySequentialVideoRef(value: unknown): value is string {
-  return typeof value === 'string' && /^gen_vid_\d+$/i.test(value);
-}
-
-function getThumbnailMediaRef(element: ThumbnailMediaElement): string | undefined {
-  if (element.type === 'image' && isGeneratedMediaRef(element.src)) {
-    return element.src;
-  }
-  if (element.type === 'video') {
-    if (isGeneratedMediaRef(element.mediaRef)) return element.mediaRef;
-    if (isGeneratedMediaRef(element.src)) return element.src;
-  }
-  return undefined;
-}
-
-function getMediaRecordElementId(recordId: string): string {
-  return recordId.includes(':') ? recordId.split(':').slice(1).join(':') : recordId;
-}
-
-function blobWithType(blob: Blob, mimeType: string): Blob {
-  return blob.type ? blob : new Blob([blob], { type: mimeType });
-}
-
 function revokeObjectUrl(url: string | undefined) {
   if (url?.startsWith('blob:')) {
     URL.revokeObjectURL(url);
@@ -231,81 +203,14 @@ export function revokeThumbnailSlideMediaUrls(slides: Record<string, ThumbnailSl
 
 /**
  * Get first slide scene's canvas data for each stage (for thumbnail preview).
- * Also resolves generated image/video refs from mediaFiles so thumbnails show real media.
- * Returns a map of stageId -> Slide (canvas data with resolved media)
+ * Delegates to the Supabase data-access layer: media refs resolve through
+ * `oss_key`, which is stored as the full public CDN URL, so the resolver is
+ * identity (no blob fetch, no URL.createObjectURL).
  */
 export async function getFirstSlideByStages(
   stageIds: string[],
 ): Promise<Record<string, ThumbnailSlide>> {
-  const result: Record<string, ThumbnailSlide> = {};
-  try {
-    await Promise.all(
-      stageIds.map(async (stageId) => {
-        // INTENTIONAL SPLIT-READ (the one allowed): scenes from Supabase,
-        // media blobs from Dexie (media stays on Dexie through Stage C4). Do
-        // NOT delegate to queries.getFirstSlideByStages — that resolves via
-        // oss_key against Supabase media_file, the wrong source while media
-        // lives in Dexie.
-        const { scenes } = await getScenes(stageId);
-        const firstSlide = scenes.find((s) => isSlideContent(s.content));
-        if (firstSlide && isSlideContent(firstSlide.content)) {
-          const slide = structuredClone(firstSlide.content.canvas);
-
-          const mediaElements = slide.elements.filter((el) =>
-            getThumbnailMediaRef(el as ThumbnailMediaElement),
-          );
-          if (mediaElements.length > 0) {
-            const mediaRecords = await db.mediaFiles.where('stageId').equals(stageId).toArray();
-            const videoRecords = mediaRecords.filter(
-              (record) => !record.error && record.type === 'video',
-            );
-            const mediaMap = new Map(
-              mediaRecords.map((record) => [getMediaRecordElementId(record.id), record] as const),
-            );
-
-            for (const el of mediaElements as ThumbnailMediaElement[]) {
-              const mediaRef = getThumbnailMediaRef(el);
-              const exactRecord = mediaRef ? mediaMap.get(mediaRef) : undefined;
-              const usableExactRecord = exactRecord && !exactRecord.error ? exactRecord : undefined;
-              const legacyRecord =
-                !exactRecord &&
-                el.type === 'video' &&
-                isLegacySequentialVideoRef(mediaRef) &&
-                videoRecords.length === 1
-                  ? videoRecords[0]
-                  : undefined;
-              const record = usableExactRecord ?? legacyRecord;
-
-              if (!mediaRef || !record) {
-                if (el.type === 'image') {
-                  // Clear unresolved placeholder so BaseImageElement won't subscribe
-                  // to the global media store (which may have stale data from another course)
-                  el.src = '';
-                }
-                continue;
-              }
-
-              if (el.type === 'image' && record.type === 'image') {
-                el.src = URL.createObjectURL(blobWithType(record.blob, record.mimeType));
-              } else if (el.type === 'video' && record.type === 'video') {
-                el.src = URL.createObjectURL(blobWithType(record.blob, record.mimeType));
-                if (record.poster) {
-                  el.poster = URL.createObjectURL(blobWithType(record.poster, 'image/jpeg'));
-                }
-              } else if (el.type === 'image') {
-                el.src = '';
-              }
-            }
-          }
-
-          result[stageId] = slide;
-        }
-      }),
-    );
-  } catch (error) {
-    log.error('Failed to load thumbnails:', error);
-  }
-  return result;
+  return getFirstSlideByStagesFromQueries(stageIds, async (ossKey) => ossKey ?? undefined);
 }
 
 /**
