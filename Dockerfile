@@ -51,3 +51,13 @@ USER nextjs
 EXPOSE 3000
 
 CMD ["node", "server.js"]
+
+# ---- Stage 5: Worker (pg-boss classroom-generation consumer) ----
+# The worker runs generateClassroom() in-process via tsx, so it needs the full
+# node_modules (incl. tsx) and the TS source — not the Next standalone the app
+# runner uses. Reuse the builder image, which has both after `pnpm build`.
+# ponytail: tsx stays a devDependency — the builder stage installs devDeps, so
+# this image has it; move to dependencies only if the worker ever ships as a
+# prod-trimmed (no-devDep) image.
+FROM builder AS worker
+CMD ["pnpm", "worker"]

@@ -77,6 +77,29 @@ services:
       - openmaic-data:/app/data
     restart: unless-stopped
 
+  # Worker: pulls classroom-generation jobs from the pg-boss queue (Postgres) and
+  # runs generateClassroom() off the web request process. One replica, batchSize:1
+  # — matches the old in-process single-flight. Shares the app's data volume so
+  # media/audio/classroom JSON it writes are served by the app's routes.
+  worker:
+    profiles: ["app"]
+    build:
+      context: .
+      target: worker
+    container_name: openmaic-worker
+    env_file:
+      - .env.local
+    environment:
+      DATABASE_URL: postgresql://openmaic:openmaic@postgres:5432/openmaic
+      S3_ENDPOINT: http://minio:9000
+      S3_PUBLIC_BASE_URL: http://localhost:9000/openmaic-media
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - openmaic-data:/app/data
+    restart: unless-stopped
+
 volumes:
   pgdata:
   miniodata:
