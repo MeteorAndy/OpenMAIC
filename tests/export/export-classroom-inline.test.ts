@@ -1,4 +1,14 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
+
+// use-export-classroom now imports the Supabase data layer at module load, which
+// eagerly creates a browser client (needs env vars). This test only exercises
+// the pure inlineSceneContent helper, so stub the queries module to avoid the
+// client init side-effect.
+vi.mock('@/lib/supabase/queries', () => ({
+  getCourse: vi.fn(),
+  getGeneratedAgents: vi.fn(),
+}));
+
 import { inlineSceneContent } from '@/lib/export/use-export-classroom';
 
 const fetchImpl = (async (_url: string) => {

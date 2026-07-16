@@ -5,10 +5,22 @@
  * Each stage has its own storage key based on stageId
  */
 
-import { makeScene, Stage, Scene } from '../types/stage';
+import { Stage, Scene } from '../types/stage';
+import { isSlideContent } from '../types/stage';
 import { ChatSession } from '../types/chat';
 import { db } from './database';
 import { saveChatSessions, loadChatSessions, deleteChatSessions } from './chat-storage';
+import {
+  upsertCourse,
+  getCourse,
+  replaceScenes,
+  getScenes,
+  listCourses,
+  renameCourse,
+  courseExists,
+  deleteCourse,
+  type CourseOutline,
+} from '@/lib/supabase/queries';
 import { clearPlaybackState } from './playback-storage';
 import { clearAllForScene } from '@/lib/quiz/persistence';
 import { deleteStageRuntimeSafely } from '@/lib/runtime/store';
@@ -17,11 +29,26 @@ import { createLogger } from '@/lib/logger';
 
 const log = createLogger('StageStorage');
 
+// ponytail: module-level optimistic-lock guard. Keyed by stageId, holds the raw
+// server `updated_at` (opaque ISO) returned by the last course read/write.
+// Threaded through saveStageData/loadStageData/renameStage so upsertCourse's
+// guarded UPDATE can detect a stale write. undefined => unguarded (last-write-
+// wins, byte-identical to Dexie). A separate getCourse RMW is used for outline
+// writes (store/stage.ts) since those don't flow through here.
+const guardByStageId = new Map<string, string>();
+
 export interface StageStoreData {
   stage: Stage;
   scenes: Scene[];
   currentSceneId: string | null;
   chats: ChatSession[];
+  /**
+   * course.outline jsonb ({outlines, generationComplete} | null) — single source
+   * with the course row. Load-only: populated by loadStageData (for the store's
+   * resume-on-mount read); saveStageData does NOT write it (outline is owned by
+   * setCourseOutline), so it's optional here.
+   */
+  outline?: CourseOutline;
 }
 
 export interface StageListItem {
@@ -36,46 +63,19 @@ export interface StageListItem {
 }
 
 /**
- * Save stage data to IndexedDB
+ * Save stage data to Supabase (course + scenes + chats move together).
  */
 export async function saveStageData(stageId: string, data: StageStoreData): Promise<void> {
   try {
-    const now = Date.now();
+    const guard = guardByStageId.get(stageId);
+    const newGuard = await upsertCourse(stageId, data.stage, data.currentSceneId || null, guard);
+    guardByStageId.set(stageId, newGuard);
 
-    // Save to stages table
-    await db.stages.put({
-      id: stageId,
-      name: data.stage.name || 'Untitled Stage',
-      description: data.stage.description,
-      createdAt: data.stage.createdAt || now,
-      updatedAt: now,
-      languageDirective: data.stage.languageDirective,
-      style: data.stage.style,
-      currentSceneId: data.currentSceneId || undefined,
-      agentIds: data.stage.agentIds,
-      videoManifest: data.stage.videoManifest,
-      interactiveMode: data.stage.interactiveMode,
-      taskEngineMode: data.stage.taskEngineMode,
-      generatedAgentConfigs: data.stage.generatedAgentConfigs,
-    });
+    // Scenes full-replace (delete-by-course + upsert). Guarded at the course
+    // level by the upsertCourse above succeeding first.
+    await replaceScenes(stageId, data.scenes);
 
-    // Delete old scenes first to avoid orphaned data
-    await db.scenes.where('stageId').equals(stageId).delete();
-
-    // Save new scenes
-    if (data.scenes && data.scenes.length > 0) {
-      await db.scenes.bulkPut(
-        data.scenes.map((scene, index) => ({
-          ...scene,
-          stageId,
-          order: scene.order ?? index,
-          createdAt: scene.createdAt || now,
-          updatedAt: scene.updatedAt || now,
-        })),
-      );
-    }
-
-    // Save chat sessions to independent table
+    // Chat sessions persist through the now-delegated chat-storage (Supabase).
     if (data.chats) {
       await saveChatSessions(stageId, data.chats);
     }
@@ -88,33 +88,34 @@ export async function saveStageData(stageId: string, data: StageStoreData): Prom
 }
 
 /**
- * Load stage data from IndexedDB
+ * Load stage data from Supabase. Course + scenes read together; guard cached for
+ * the next saveStageData. outline comes from the same getCourse call (single
+ * round trip) so store.loadFromStorage needs no second query.
  */
 export async function loadStageData(stageId: string): Promise<StageStoreData | null> {
   try {
-    // Load stage
-    const stage = await db.stages.get(stageId);
-    if (!stage) {
+    const got = await getCourse(stageId);
+    if (!got) {
       log.info(`Stage not found: ${stageId}`);
       return null;
     }
+    const { stage, guard, outline } = got;
+    guardByStageId.set(stageId, guard);
 
-    // Load scenes
-    const scenes = await db.scenes.where('stageId').equals(stageId).sortBy('order');
-
-    // Load chat sessions from independent table
+    // getScenes already makeScene-binds each row (deriving `type` from
+    // content.type) — do NOT re-bind here.
+    const { scenes } = await getScenes(stageId);
     const chats = await loadChatSessions(stageId);
 
     log.info(`Loaded stage: ${stageId}, scenes: ${scenes.length}, chats: ${chats.length}`);
 
     return {
       stage,
-      // `SceneRecord` is the loose persisted shape (independent `type` + `content`);
-      // re-bind each to a discriminated `AppScene`, deriving `type` from the stored
-      // `content.type`. Spreads the full record, so `whiteboard` etc. are preserved.
-      scenes: scenes.map((s) => makeScene(s, s.content)),
+      scenes,
+      // currentSceneId fallback chain preserved verbatim.
       currentSceneId: stage.currentSceneId || scenes[0]?.id || null,
       chats,
+      outline,
     };
   } catch (error) {
     log.error('Failed to load stage:', error);
@@ -123,21 +124,23 @@ export async function loadStageData(stageId: string): Promise<StageStoreData | n
 }
 
 /**
- * Delete stage and all related data
+ * Delete stage and all related data.
+ * ORDER CRITICAL: scene ids are collected BEFORE deleteCourse, because the
+ * CASCADE FK empties Supabase scenes and getScenes would return [] afterwards,
+ * causing the per-scene quiz-persistence sweep to miss them.
  */
 export async function deleteStageData(stageId: string): Promise<void> {
   try {
-    // Collect scene ids before deletion so we can sweep per-scene localStorage
-    // keys (quiz draft / submitted answers / graded results).
-    const sceneIds = (await db.scenes.where('stageId').equals(stageId).toArray()).map((s) => s.id);
+    // Collect scene ids before the DB delete (PostgREST read; returns [] if absent).
+    const { raw } = await getScenes(stageId);
+    const sceneIds = raw.map((s) => s.id);
 
-    // Delete stage
-    await db.stages.delete(stageId);
+    // deleteCourse CASCADE-clears DB scene/chat_session/generated_agent/media_file
+    // rows (db/c2_prereqs.sql). Device-local cleanup follows.
+    await deleteCourse(stageId);
 
-    // Delete scenes
-    await db.scenes.where('stageId').equals(stageId).delete();
-
-    // Delete chat sessions and playback state
+    // Redundant with CASCADE but harmless (idempotent); keeps the chat-storage
+    // contract for environments where the FK isn't applied yet.
     await deleteChatSessions(stageId);
     await clearPlaybackState(stageId);
 
@@ -147,7 +150,7 @@ export async function deleteStageData(stageId: string): Promise<void> {
     }
 
     // Learner-runtime data lives in a separate IndexedDB database, so it is
-    // cascaded after the Dexie work: it cannot join those transactions, and a
+    // cascaded after the Supabase work: it cannot join those calls, and a
     // runtime failure must not abort them (the helper warns instead of
     // throwing).
     await deleteStageRuntimeSafely(stageId);
@@ -165,34 +168,10 @@ export async function deleteStageData(stageId: string): Promise<void> {
 }
 
 /**
- * List all stages
+ * List all stages (single PostgREST query with a scene(count) aggregate; never throws).
  */
 export async function listStages(): Promise<StageListItem[]> {
-  try {
-    const stages = await db.stages.orderBy('updatedAt').reverse().toArray();
-
-    const stageList: StageListItem[] = await Promise.all(
-      stages.map(async (stage) => {
-        const sceneCount = await db.scenes.where('stageId').equals(stage.id).count();
-
-        return {
-          id: stage.id,
-          name: stage.name,
-          description: stage.description,
-          sceneCount,
-          createdAt: stage.createdAt,
-          updatedAt: stage.updatedAt,
-          interactiveMode: stage.interactiveMode,
-          taskEngineMode: stage.taskEngineMode,
-        };
-      }),
-    );
-
-    return stageList;
-  } catch (error) {
-    log.error('Failed to list stages:', error);
-    return [];
-  }
+  return listCourses();
 }
 
 type ThumbnailMediaElement = {
@@ -262,9 +241,14 @@ export async function getFirstSlideByStages(
   try {
     await Promise.all(
       stageIds.map(async (stageId) => {
-        const scenes = await db.scenes.where('stageId').equals(stageId).sortBy('order');
-        const firstSlide = scenes.find((s) => s.content?.type === 'slide');
-        if (firstSlide && firstSlide.content.type === 'slide') {
+        // INTENTIONAL SPLIT-READ (the one allowed): scenes from Supabase,
+        // media blobs from Dexie (media stays on Dexie through Stage C4). Do
+        // NOT delegate to queries.getFirstSlideByStages — that resolves via
+        // oss_key against Supabase media_file, the wrong source while media
+        // lives in Dexie.
+        const { scenes } = await getScenes(stageId);
+        const firstSlide = scenes.find((s) => isSlideContent(s.content));
+        if (firstSlide && isSlideContent(firstSlide.content)) {
           const slide = structuredClone(firstSlide.content.canvas);
 
           const mediaElements = slide.elements.filter((el) =>
@@ -325,11 +309,12 @@ export async function getFirstSlideByStages(
 }
 
 /**
- * Rename a stage (updates only the name field in IndexedDB)
+ * Rename a stage (guarded course UPDATE; captures the new guard for the next write).
  */
 export async function renameStage(stageId: string, newName: string): Promise<void> {
   try {
-    await db.stages.update(stageId, { name: newName, updatedAt: Date.now() });
+    const newGuard = await renameCourse(stageId, newName, guardByStageId.get(stageId));
+    guardByStageId.set(stageId, newGuard);
     log.info(`Renamed stage ${stageId} to "${newName}"`);
   } catch (error) {
     log.error('Failed to rename stage:', error);
@@ -338,14 +323,8 @@ export async function renameStage(stageId: string, newName: string): Promise<voi
 }
 
 /**
- * Check if stage exists
+ * Check if stage exists (never throws; returns false on error).
  */
 export async function stageExists(stageId: string): Promise<boolean> {
-  try {
-    const stage = await db.stages.get(stageId);
-    return !!stage;
-  } catch (error) {
-    log.error('Failed to check stage existence:', error);
-    return false;
-  }
+  return courseExists(stageId);
 }

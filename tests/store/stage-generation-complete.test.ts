@@ -1,23 +1,33 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-// IndexedDB / stage-storage modules are imported dynamically inside the
-// store's save/load actions. Mock them so we can drive load inputs and
-// observe persistence without a real IndexedDB. Spies go through vi.hoisted
-// so they exist before the hoisted vi.mock factories run.
-const { loadStageDataMock, saveStageDataMock, stageOutlinesGet, stageOutlinesPut } = vi.hoisted(
-  () => ({
-    loadStageDataMock: vi.fn(),
-    saveStageDataMock: vi.fn().mockResolvedValue(undefined),
-    stageOutlinesGet: vi.fn(),
-    stageOutlinesPut: vi.fn(),
-  }),
-);
+// stage-storage / supabase-queries modules are imported dynamically inside the
+// store's save/load actions. Mock them so we can drive load inputs and observe
+// persistence without a real backend. Spies go through vi.hoisted so they exist
+// before the hoisted vi.mock factories run.
+//
+// C2: outline persistence moved from db.stageOutlines (Dexie) to course.outline
+// jsonb via @/lib/supabase/queries (getCourse reads the guard, setCourseOutline
+// writes {outlines, generationComplete}). loadFromStorage reads outline from
+// loadStageData (single getCourse round trip).
+const {
+  loadStageDataMock,
+  saveStageDataMock,
+  getCourseMock,
+  setCourseOutlineMock,
+} = vi.hoisted(() => ({
+  loadStageDataMock: vi.fn(),
+  saveStageDataMock: vi.fn().mockResolvedValue(undefined),
+  getCourseMock: vi.fn(),
+  setCourseOutlineMock: vi.fn().mockResolvedValue('guard-1'),
+}));
 vi.mock('@/lib/utils/stage-storage', () => ({
   saveStageData: (...args: unknown[]) => saveStageDataMock(...args),
   loadStageData: (...args: unknown[]) => loadStageDataMock(...args),
 }));
-vi.mock('@/lib/utils/database', () => ({
-  db: { stageOutlines: { put: stageOutlinesPut, get: stageOutlinesGet } },
+vi.mock('@/lib/supabase/queries', () => ({
+  getCourse: (...args: unknown[]) => getCourseMock(...args),
+  setCourseOutline: (...args: unknown[]) => setCourseOutlineMock(...args),
+  ConcurrencyConflictError: class ConcurrencyConflictError extends Error {},
 }));
 
 import { useStageStore } from '@/lib/store/stage';
@@ -66,8 +76,10 @@ function makeOutline(order: number): SceneOutline {
 
 beforeEach(() => {
   useStageStore.getState().clearStore();
-  stageOutlinesGet.mockReset();
-  stageOutlinesPut.mockReset();
+  getCourseMock.mockReset();
+  setCourseOutlineMock.mockReset();
+  setCourseOutlineMock.mockResolvedValue('guard-1');
+  getCourseMock.mockResolvedValue({ stage: makeStage(), guard: 'guard-1', outline: null });
   loadStageDataMock.mockReset();
 });
 
@@ -94,45 +106,46 @@ describe('generationComplete', () => {
     useStageStore.setState({ stage: makeStage(), outlines: [makeOutline(1), makeOutline(2)] });
     useStageStore.getState().setGenerationComplete(true);
     expect(useStageStore.getState().generationComplete).toBe(true);
-    // Persisted via an async dynamic import.
-    await vi.waitFor(() => expect(stageOutlinesPut).toHaveBeenCalled());
-    const record = stageOutlinesPut.mock.calls.at(-1)![0] as {
-      generationComplete?: boolean;
-      outlines: SceneOutline[];
-    };
-    expect(record.generationComplete).toBe(true);
-    expect(record.outlines.map((o) => o.order)).toEqual([1, 2]);
+    // Persisted via an async dynamic import (getCourse RMW -> setCourseOutline).
+    await vi.waitFor(() => expect(setCourseOutlineMock).toHaveBeenCalled());
+    const [courseId, payload] = setCourseOutlineMock.mock.calls.at(-1)! as [
+      string,
+      { outlines: SceneOutline[]; generationComplete?: boolean },
+    ];
+    expect(courseId).toBe('stage-1');
+    expect(payload.generationComplete).toBe(true);
+    expect(payload.outlines.map((o) => o.order)).toEqual([1, 2]);
   });
 
   // Guards a persistence race: the final scene saves through a 500ms debounce,
-  // so the flag must not reach IndexedDB before the scenes do — else a reload
+  // so the flag must not reach the DB before the scenes do — else a reload
   // would trust the flag and drop the unsaved final slide.
   it('flushes scenes before persisting the completion flag', async () => {
     useStageStore.setState({ stage: makeStage(), outlines: [makeOutline(1)] });
     saveStageDataMock.mockClear();
-    stageOutlinesPut.mockClear();
+    setCourseOutlineMock.mockClear();
 
     useStageStore.getState().setGenerationComplete(true);
 
-    await vi.waitFor(() => expect(stageOutlinesPut).toHaveBeenCalled());
+    await vi.waitFor(() => expect(setCourseOutlineMock).toHaveBeenCalled());
     expect(saveStageDataMock).toHaveBeenCalled();
     // Scene flush must be ordered before the flag write.
     expect(saveStageDataMock.mock.invocationCallOrder[0]).toBeLessThan(
-      stageOutlinesPut.mock.invocationCallOrder[0],
+      setCourseOutlineMock.mock.invocationCallOrder[0],
     );
   });
 
   it('does not persist the completion flag when the scene flush fails', async () => {
     useStageStore.setState({ stage: makeStage(), outlines: [makeOutline(1)] });
     saveStageDataMock.mockRejectedValueOnce(new Error('disk full'));
-    stageOutlinesPut.mockClear();
+    setCourseOutlineMock.mockClear();
 
     useStageStore.getState().setGenerationComplete(true);
     // In-memory flag still flips (UI), but the durable record must not be
     // written ahead of the scenes — else a reload would drop the unsaved slide.
     expect(useStageStore.getState().generationComplete).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, 20));
-    expect(stageOutlinesPut).not.toHaveBeenCalled();
+    expect(setCourseOutlineMock).not.toHaveBeenCalled();
   });
 
   it('starting a new stage resets generationComplete to false', () => {
@@ -239,11 +252,10 @@ describe('generationComplete', () => {
       scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2)], // order 3 was deleted
       currentSceneId: 'a',
       chats: [],
-    });
-    stageOutlinesGet.mockResolvedValue({
-      stageId: 'stage-1',
-      outlines: [makeOutline(1), makeOutline(2), makeOutline(3)], // orphan order 3
-      generationComplete: true,
+      outline: {
+        outlines: [makeOutline(1), makeOutline(2), makeOutline(3)], // orphan order 3
+        generationComplete: true,
+      },
     });
 
     await useStageStore.getState().loadFromStorage('stage-1');
@@ -253,7 +265,7 @@ describe('generationComplete', () => {
   });
 
   // Backward-compat: a deck generated before the flag existed has no
-  // generationComplete in its record. If every outline already has a scene it
+  // generationComplete in its outline. If every outline already has a scene it
   // is fully generated, so it must self-heal to complete (and persist) — else
   // the first deletion would regenerate the slide.
   it('infers and persists completion for a legacy fully-generated deck', async () => {
@@ -262,18 +274,18 @@ describe('generationComplete', () => {
       scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2), makeSlideScene('c', 3)],
       currentSceneId: 'a',
       chats: [],
-    });
-    stageOutlinesGet.mockResolvedValue({
-      stageId: 'stage-1',
-      outlines: [makeOutline(1), makeOutline(2), makeOutline(3)], // all materialized, no flag
+      outline: {
+        outlines: [makeOutline(1), makeOutline(2), makeOutline(3)], // all materialized, no flag
+      },
     });
 
     await useStageStore.getState().loadFromStorage('stage-1');
 
     expect(useStageStore.getState().generationComplete).toBe(true);
     expect(useStageStore.getState().generatingOutlines).toEqual([]);
-    // Healed flag is written back so the next load is authoritative.
-    const healed = stageOutlinesPut.mock.calls.at(-1)![0] as { generationComplete?: boolean };
+    // Healed flag is written back to course.outline so the next load is authoritative.
+    await vi.waitFor(() => expect(setCourseOutlineMock).toHaveBeenCalled());
+    const healed = setCourseOutlineMock.mock.calls.at(-1)![1] as { generationComplete?: boolean };
     expect(healed.generationComplete).toBe(true);
   });
 
@@ -285,11 +297,10 @@ describe('generationComplete', () => {
       scenes: [makeSlideScene('a', 1), makeSlideScene('b', 2)],
       currentSceneId: 'a',
       chats: [],
-    });
-    stageOutlinesGet.mockResolvedValue({
-      stageId: 'stage-1',
-      outlines: [makeOutline(1), makeOutline(2), makeOutline(3)],
-      generationComplete: false,
+      outline: {
+        outlines: [makeOutline(1), makeOutline(2), makeOutline(3)],
+        generationComplete: false,
+      },
     });
 
     await useStageStore.getState().loadFromStorage('stage-1');

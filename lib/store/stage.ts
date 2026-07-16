@@ -296,26 +296,35 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
 
   setOutlines: (outlines) => {
     set({ outlines });
-    // Persist outlines to IndexedDB. Carry generationComplete so writing
-    // outlines never clobbers a previously-recorded completion flag.
+    // Persist outlines onto course.outline jsonb (single source with the
+    // generationComplete flag). Carries generationComplete so writing outlines
+    // never clobbers a previously-recorded completion flag. Read-modify-write
+    // for the optimistic-concurrency guard; ConcurrencyConflictError is treated
+    // as not-saved so the deck stays resumable (scenes persist independently
+    // via the debounced saveStageData).
     const stageId = get().stage?.id;
     if (stageId) {
       const generationComplete = get().generationComplete;
-      import('@/lib/utils/database').then(({ db }) => {
-        db.stageOutlines.put({
-          stageId,
-          outlines,
-          generationComplete,
-          createdAt: Date.now(),
-          updatedAt: Date.now(),
-        });
-      });
+      void (async () => {
+        const { getCourse, setCourseOutline, ConcurrencyConflictError } = await import(
+          '@/lib/supabase/queries'
+        );
+        try {
+          const got = await getCourse(stageId);
+          await setCourseOutline(stageId, { outlines, generationComplete }, got?.guard);
+        } catch (error) {
+          if (error instanceof ConcurrencyConflictError) return;
+          log.error('Failed to persist outlines:', error);
+        }
+      })();
     }
   },
 
   setGenerationComplete: (generationComplete) => {
     set({ generationComplete });
-    // Persist alongside the outlines record so resume-on-mount can read it.
+    // Persist alongside outlines on course.outline so resume-on-mount can read
+    // it. The flag + outlines ride the SAME jsonb payload so neither clobbers
+    // the other.
     const stageId = get().stage?.id;
     if (stageId) {
       const outlines = get().outlines;
@@ -327,17 +336,22 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       // fails, skip the flag: the deck stays resumable and recovers on reload.
       void get()
         .saveToStorage()
-        .then((saved) => {
+        .then(async (saved) => {
           if (!saved) return;
-          return import('@/lib/utils/database').then(({ db }) => {
-            db.stageOutlines.put({
+          const { getCourse, setCourseOutline, ConcurrencyConflictError } = await import(
+            '@/lib/supabase/queries'
+          );
+          try {
+            const got = await getCourse(stageId);
+            await setCourseOutline(
               stageId,
-              outlines,
-              generationComplete,
-              createdAt: Date.now(),
-              updatedAt: Date.now(),
-            });
-          });
+              { outlines, generationComplete },
+              got?.guard,
+            );
+          } catch (error) {
+            if (error instanceof ConcurrencyConflictError) return;
+            log.error('Failed to persist generationComplete:', error);
+          }
         });
     }
   },
@@ -432,17 +446,17 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
       const { loadStageData } = await import('@/lib/utils/stage-storage');
       const data = await loadStageData(stageId);
 
-      // Load outlines for resume-on-refresh
-      const { db } = await import('@/lib/utils/database');
-      const outlinesRecord = await db.stageOutlines.get(stageId);
-      const outlines = outlinesRecord?.outlines || [];
-      const persistedComplete = outlinesRecord?.generationComplete ?? false;
-
       if (data) {
         // Normalize legacy slide content (missing schemaVersion) at the load
-        // boundary, same as setScenes/addScene — IndexedDB snapshots predate
+        // boundary, same as setScenes/addScene — DB snapshots predate
         // the schema field, so they must be migrated on the way in.
         const migrated = data.scenes.map(migrateScene);
+
+        // Outline + generationComplete now come from the course row (single
+        // source on course.outline jsonb), returned by loadStageData's one
+        // getCourse call — no second round trip.
+        const outlines = data.outline?.outlines ?? [];
+        const persistedComplete = data.outline?.generationComplete ?? false;
 
         // Self-heal decks generated before generationComplete was tracked: if
         // every outline already has a matching scene, generation must have
@@ -459,13 +473,23 @@ const useStageStoreBase = create<StageState>()((set, get) => ({
           outlines.length > 0 && outlines.every((o) => migrated.some((s) => s.order === o.order));
         const generationComplete = persistedComplete || allMaterialized;
         if (generationComplete && !persistedComplete) {
-          db.stageOutlines.put({
-            stageId,
-            outlines,
-            generationComplete: true,
-            createdAt: outlinesRecord?.createdAt ?? Date.now(),
-            updatedAt: Date.now(),
-          });
+          // Persist the healed flag onto course.outline (guarded RMW).
+          void (async () => {
+            const { getCourse, setCourseOutline, ConcurrencyConflictError } = await import(
+              '@/lib/supabase/queries'
+            );
+            try {
+              const got = await getCourse(stageId);
+              await setCourseOutline(
+                stageId,
+                { outlines, generationComplete: true },
+                got?.guard,
+              );
+            } catch (error) {
+              if (error instanceof ConcurrencyConflictError) return;
+              log.error('Failed to self-heal generationComplete:', error);
+            }
+          })();
         }
 
         set({

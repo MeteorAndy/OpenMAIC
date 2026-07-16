@@ -5,7 +5,7 @@ import { saveAs } from 'file-saver';
 import { toast } from 'sonner';
 import { useStageStore } from '@/lib/store/stage';
 import { useI18n } from '@/lib/hooks/use-i18n';
-import { db, getGeneratedAgentsByStageId } from '@/lib/utils/database';
+import { getCourse, getGeneratedAgents } from '@/lib/supabase/queries';
 import {
   CLASSROOM_ZIP_FORMAT_VERSION,
   CLASSROOM_ZIP_EXTENSION,
@@ -55,12 +55,12 @@ export function useExportClassroom() {
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
 
-      // 1. Read latest stage name from IndexedDB (may have been renamed on home page)
-      const freshStage = await db.stages.get(stage.id);
-      const latestName = freshStage?.name || stage.name;
+      // 1. Read latest stage name from Supabase (may have been renamed on home page)
+      const got = await getCourse(stage.id);
+      const latestName = got?.stage.name || stage.name;
 
-      // 2. Collect agents from DB
-      const agentRecords = await getGeneratedAgentsByStageId(stage.id);
+      // 2. Collect agents from Supabase
+      const agentRecords = await getGeneratedAgents(stage.id);
 
       // 3. Collect audio files
       const audioFiles = await collectAudioFiles(scenes);

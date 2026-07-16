@@ -1,25 +1,24 @@
 import { describe, expect, it, vi } from 'vitest';
 
 // The live classroom-deletion flow (app/page.tsx) goes through
-// `deleteStageData` in stage-storage. Mock its module dependencies (the
-// established pattern for database-touching code — no Dexie-in-node harness)
-// and run the REAL function to prove it cascades into the runtime layer.
+// `deleteStageData` in stage-storage. After the C2 rewire it reads scenes via
+// `@/lib/supabase/queries` (getScenes) and deletes via deleteCourse, so the
+// queries module is mocked here. Mock the remaining module dependencies (the
+// established pattern for database-touching code — no Supabase/Dexie in the
+// node harness) and run the REAL deleteStageData to prove it cascades into the
+// runtime layer.
 vi.mock('@/lib/runtime/store', () => ({
   deleteStageRuntimeSafely: vi.fn().mockResolvedValue(undefined),
 }));
-vi.mock('@/lib/utils/database', () => ({
-  db: {
-    stages: { delete: vi.fn().mockResolvedValue(undefined) },
-    scenes: {
-      where: () => ({
-        equals: () => ({
-          toArray: vi.fn().mockResolvedValue([{ id: 'scene-1' }]),
-          delete: vi.fn().mockResolvedValue(1),
-        }),
-      }),
-    },
-  },
+vi.mock('@/lib/supabase/queries', () => ({
+  // raw scene ids are collected BEFORE deleteCourse (CASCADE would empty them).
+  getScenes: vi.fn().mockResolvedValue({ scenes: [], raw: [{ id: 'scene-1' }] }),
+  deleteCourse: vi.fn().mockResolvedValue(undefined),
 }));
+// stage-storage still imports `db` from database for media reads
+// (getFirstSlideByStages); this test never touches media, so a stub avoids
+// loading real Dexie.
+vi.mock('@/lib/utils/database', () => ({ db: {} }));
 vi.mock('@/lib/utils/chat-storage', () => ({
   saveChatSessions: vi.fn(),
   loadChatSessions: vi.fn(),

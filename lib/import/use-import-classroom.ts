@@ -5,7 +5,9 @@ import { nanoid } from 'nanoid';
 import { toast } from 'sonner';
 import { useI18n } from '@/lib/hooks/use-i18n';
 import { db, mediaFileKey } from '@/lib/utils/database';
-import type { AudioFileRecord, MediaFileRecord, GeneratedAgentRecord } from '@/lib/utils/database';
+import type { AudioFileRecord, MediaFileRecord } from '@/lib/utils/database';
+import { makeScene, type Stage, type Scene } from '@/lib/types/stage';
+import { upsertCourse, replaceGeneratedAgents, replaceScenes } from '@/lib/supabase/queries';
 import type { ClassroomManifest, ManifestScene } from '@/lib/export/classroom-zip-types';
 import { rewriteAudioRefsToIds } from '@/lib/export/classroom-zip-utils';
 import { createLogger } from '@/lib/logger';
@@ -166,8 +168,8 @@ export function useImportClassroom(onSuccess?: () => void) {
         setPhase('writingCourse');
         toast.loading(t('import.writingCourse'), { id: toastId });
 
-        // Write stage
-        await db.stages.put({
+        // Write stage (first write: no guard, last-write-wins matches the old Dexie put)
+        const stageObj: Stage = {
           id: newStageId,
           name: manifest.stage.name || 'Imported Classroom',
           description: manifest.stage.description,
@@ -176,26 +178,28 @@ export function useImportClassroom(onSuccess?: () => void) {
           createdAt: manifest.stage.createdAt || now,
           updatedAt: now,
           agentIds: newAgentIds.length > 0 ? newAgentIds : undefined,
-        });
+        };
+        await upsertCourse(newStageId, stageObj, null);
 
-        // Write agents
+        // Write agents (delete-then-upsert by course_id; voiceConfig dropped)
         if (manifest.agents?.length) {
-          const agentRecords: GeneratedAgentRecord[] = manifest.agents.map((a, i) => ({
+          const agentInputs = manifest.agents.map((a, i) => ({
             id: newAgentIds[i],
-            stageId: newStageId,
             name: a.name,
             role: a.role,
             persona: a.persona,
             avatar: a.avatar,
             color: a.color,
             priority: a.priority,
-            createdAt: now,
           }));
-          await db.generatedAgents.bulkPut(agentRecords);
+          await replaceGeneratedAgents(newStageId, agentInputs);
         }
 
-        // Write scenes with rewritten references
-        const sceneRecords = manifest.scenes.map((mScene: ManifestScene, index: number) => {
+        // Write scenes with rewritten references. makeScene()-bound (derives
+        // `type` from content.type); manifest `whiteboards` (plural) maps to the
+        // Scene.whiteboards plural field, which replaceScenes persists to the
+        // singular DB `whiteboard` column.
+        const scenes: Scene[] = manifest.scenes.map((mScene: ManifestScene, index: number) => {
           const newSceneId = nanoid();
 
           const actions = mScene.actions
@@ -216,21 +220,22 @@ export function useImportClassroom(onSuccess?: () => void) {
             };
           }
 
-          return {
-            id: newSceneId,
-            stageId: newStageId,
-            type: mScene.type,
-            title: mScene.title,
-            order: mScene.order ?? index,
-            content: mScene.content,
-            actions,
-            whiteboard: mScene.whiteboards,
-            multiAgent,
-            createdAt: now,
-            updatedAt: now,
-          };
+          return makeScene(
+            {
+              id: newSceneId,
+              stageId: newStageId,
+              title: mScene.title,
+              order: mScene.order ?? index,
+              actions,
+              whiteboards: mScene.whiteboards,
+              multiAgent,
+              createdAt: now,
+              updatedAt: now,
+            },
+            mScene.content,
+          );
         });
-        await db.scenes.bulkPut(sceneRecords);
+        await replaceScenes(newStageId, scenes);
 
         // 6. Done
         setPhase('done');

@@ -394,10 +394,15 @@ export async function listCourses(): Promise<StageListItem[]> {
   }
 }
 
-/** Read half of loadStageData. guard = raw server updated_at (opaque ISO string). */
+/**
+ * Read half of loadStageData. guard = raw server updated_at (opaque ISO string).
+ * `outline` is the app-owned course.outline jsonb ({outlines, generationComplete}
+ * | null), surfaced so loadStageData / store outline writes get it + the guard in
+ * ONE round trip instead of a second query (C2 plan option a).
+ */
 export async function getCourse(
   courseId: string,
-): Promise<{ stage: CourseStage; guard: string } | null> {
+): Promise<{ stage: CourseStage; guard: string; outline: CourseOutline } | null> {
   const { data, error } = await supabase
     .from('course')
     .select('*')
@@ -408,6 +413,7 @@ export async function getCourse(
   return {
     stage: rowToCourseStage(data as unknown as CourseRow),
     guard: (data.updated_at as string) ?? '',
+    outline: (data.outline as CourseOutline) ?? null,
   };
 }
 

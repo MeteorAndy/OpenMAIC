@@ -1,81 +1,37 @@
 /**
- * Chat Storage - Persist chat sessions to IndexedDB
+ * Chat Storage — thin delegates over the Supabase data-access layer (Stage C2).
  *
- * Independent from stage/scene storage cycle.
- * Handles serialization, truncation, and batch writes.
+ * Read+write moved together: save/load/delete now call the drop-in functions in
+ * `@/lib/supabase/queries`. The exported names/signatures are unchanged so
+ * stage-storage.ts keeps importing them as-is.
+ *
+ * The 4 save invariants live VERBATIM in queries.replaceChatSessions:
+ *   (1) empty sessions array => delete all for the course,
+ *   (2) status 'active' -> 'interrupted',
+ *   (3) messages sliced to last MAX_CHAT_MESSAGES (200 == the old
+ *       MAX_MESSAGES_PER_SESSION = 200),
+ *   (4) pendingToolCalls forced to [] on save and on read.
  */
 
-import type { ChatSession, ChatMessageMetadata, SessionStatus } from '@/lib/types/chat';
-import type { UIMessage } from 'ai';
-import { db, type ChatSessionRecord } from './database';
+import type { ChatSession } from '@/lib/types/chat';
+import {
+  replaceChatSessions,
+  getChatSessions,
+  deleteChatSessions as deleteChatSessionsDb,
+} from '@/lib/supabase/queries';
 
-/** Maximum messages per session to avoid IndexedDB bloat */
-const MAX_MESSAGES_PER_SESSION = 200;
-
-/**
- * Save chat sessions for a stage to IndexedDB.
- * - Active sessions are saved as 'interrupted' (streaming context lost on refresh)
- * - pendingToolCalls are cleared (runtime-only state)
- * - Messages are truncated to MAX_MESSAGES_PER_SESSION
- */
+/** Save (full-replace) chat sessions for a stage. See queries.replaceChatSessions. */
 export async function saveChatSessions(stageId: string, sessions: ChatSession[]): Promise<void> {
-  if (!sessions || sessions.length === 0) {
-    // Delete all sessions for this stage if empty
-    await db.chatSessions.where('stageId').equals(stageId).delete();
-    return;
-  }
-
-  const records: ChatSessionRecord[] = sessions.map((session) => ({
-    id: session.id,
-    stageId,
-    type: session.type,
-    title: session.title,
-    // Mark active sessions as interrupted (streaming context lost on refresh)
-    status: (session.status === 'active' ? 'interrupted' : session.status) as SessionStatus,
-    // Truncate messages and strip non-serializable data
-    messages: session.messages.slice(-MAX_MESSAGES_PER_SESSION),
-    config: session.config,
-    toolCalls: session.toolCalls,
-    pendingToolCalls: [], // Clear runtime state
-    createdAt: session.createdAt,
-    updatedAt: session.updatedAt,
-    sceneId: session.sceneId,
-    lastActionIndex: session.lastActionIndex,
-  }));
-
-  await db.transaction('rw', db.chatSessions, async () => {
-    // Delete old sessions for this stage, then bulk insert new ones
-    await db.chatSessions.where('stageId').equals(stageId).delete();
-    await db.chatSessions.bulkPut(records);
-  });
+  return replaceChatSessions(stageId, sessions);
 }
 
-/**
- * Load chat sessions for a stage from IndexedDB.
- * Returns sessions sorted by createdAt.
- */
+/** Load chat sessions for a stage (sorted createdAt ASC; pendingToolCalls always []). */
 export async function loadChatSessions(stageId: string): Promise<ChatSession[]> {
-  const records = await db.chatSessions.where('stageId').equals(stageId).sortBy('createdAt');
-
-  return records.map((record) => ({
-    id: record.id,
-    type: record.type,
-    title: record.title,
-    status: record.status,
-    messages: record.messages as UIMessage<ChatMessageMetadata>[],
-    config: record.config,
-    toolCalls: record.toolCalls,
-    pendingToolCalls: record.pendingToolCalls,
-    createdAt: record.createdAt,
-    updatedAt: record.updatedAt,
-    sceneId: record.sceneId,
-    lastActionIndex: record.lastActionIndex,
-  }));
+  return getChatSessions(stageId);
 }
 
-/**
- * Delete all chat sessions for a stage.
- */
+/** Delete all chat sessions for a stage. Redundant with course CASCADE once the
+ *  C2 FK is applied, but harmless (idempotent) and keeps the chat-storage contract. */
 export async function deleteChatSessions(stageId: string): Promise<void> {
-  await db.chatSessions.where('stageId').equals(stageId).delete();
+  return deleteChatSessionsDb(stageId);
 }

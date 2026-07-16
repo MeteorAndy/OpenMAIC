@@ -334,8 +334,8 @@ export function agentsToParticipants(
  * Returns the loaded agent IDs.
  */
 export async function loadGeneratedAgentsForStage(stageId: string): Promise<string[]> {
-  const { getGeneratedAgentsByStageId } = await import('@/lib/utils/database');
-  const records = await getGeneratedAgentsByStageId(stageId);
+  const { getGeneratedAgents } = await import('@/lib/supabase/queries');
+  const records = await getGeneratedAgents(stageId);
 
   const registry = useAgentRegistry.getState();
 
@@ -351,7 +351,9 @@ export async function loadGeneratedAgentsForStage(stageId: string): Promise<stri
 
   if (records.length === 0) return [];
 
-  // Add new ones
+  // Add new ones. records carry stageId (= course_id) + createdAt epoch-ms;
+  // the loop body (boundStageId: record.stageId, createdAt: new Date(record.createdAt))
+  // is unchanged from the Dexie path.
   const ids: string[] = [];
   for (const record of records) {
     registry.addAgent({
@@ -370,8 +372,10 @@ export async function loadGeneratedAgentsForStage(stageId: string): Promise<stri
 }
 
 /**
- * Save generated agents to IndexedDB and registry.
- * Clears old generated agents for this stage first.
+ * Save generated agents to Supabase and registry.
+ * Clears old generated agents for this stage first (replaceGeneratedAgents does
+ * delete-by-course_id then upsert; voiceConfig dropped — no DB column, re-derived
+ * by warmUpAgentVoices).
  */
 export async function saveGeneratedAgents(
   stageId: string,
@@ -387,23 +391,20 @@ export async function saveGeneratedAgents(
     voiceDesign?: VoiceDesign;
   }>,
 ): Promise<string[]> {
-  const { db } = await import('@/lib/utils/database');
+  const { replaceGeneratedAgents } = await import('@/lib/supabase/queries');
 
-  // Clear old generated agents for this stage
-  await db.generatedAgents.where('stageId').equals(stageId).delete();
-
-  // Clear from registry
+  // Clear from registry (storage delete happens inside replaceGeneratedAgents).
   const registry = useAgentRegistry.getState();
   for (const agent of registry.listAgents()) {
     if (agent.isGenerated) registry.deleteAgent(agent.id);
   }
 
-  // Write to IndexedDB
-  const records = agents.map((a) => ({ ...a, stageId, createdAt: Date.now() }));
-  await db.generatedAgents.bulkPut(records);
+  // Write to Supabase (delete-then-upsert by course_id; createdAt=now like the
+  // old Dexie path).
+  await replaceGeneratedAgents(stageId, agents);
 
   // Add to registry
-  for (const record of records) {
+  for (const record of agents) {
     const { voiceConfig, ...rest } = record;
     registry.addAgent({
       ...rest,
@@ -411,8 +412,8 @@ export async function saveGeneratedAgents(
       isDefault: false,
       isGenerated: true,
       boundStageId: stageId,
-      createdAt: new Date(record.createdAt),
-      updatedAt: new Date(record.createdAt),
+      createdAt: new Date(),
+      updatedAt: new Date(),
       ...(voiceConfig
         ? {
             voiceConfig: {
@@ -432,5 +433,5 @@ export async function saveGeneratedAgents(
     .then((m) => m.warmUpAgentVoices(registry.listAgents().filter((a) => a.isGenerated)))
     .catch(() => undefined);
 
-  return records.map((r) => r.id);
+  return agents.map((a) => a.id);
 }
