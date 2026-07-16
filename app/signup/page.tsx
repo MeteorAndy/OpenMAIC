@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { authClient } from '@/lib/auth-client';
+import { createClient } from '@/lib/supabase/client';
 
 export default function SignupPage() {
   const router = useRouter();
@@ -17,18 +17,29 @@ export default function SignupPage() {
     e.preventDefault();
     setLoading(true);
     setError(undefined);
-    const { error } = await authClient.signUp.email({ name, email, password });
+    const supabase = createClient();
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { name } },
+    });
     setLoading(false);
     if (error) {
       setError(error.message);
       return;
     }
-    router.push('/');
-    router.refresh();
+    // If email confirmation is off (local dev), a session is returned immediately.
+    if (data.session) {
+      router.push('/');
+      router.refresh();
+    } else {
+      setError('注册成功，请查收邮箱完成验证后登录。');
+    }
   }
 
   async function social(provider: 'github' | 'google') {
-    await authClient.signIn.social({ provider, callbackURL: '/' });
+    const supabase = createClient();
+    await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: '/' } });
   }
 
   return (

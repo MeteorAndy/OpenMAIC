@@ -1,18 +1,19 @@
 /**
- * SaaS Postgres schema (feat/saas).
+ * SaaS Postgres schema (feat/saas) — multi-user on self-hosted Supabase.
  *
- * Three groups:
- *   1. Auth — better-auth tables (user / session / account / verification).
- *      Column names follow better-auth's expected adapter shape; reconcile with
- *      `npx @better-auth/cli generate` after changing auth config.
- *   2. Business — server-canonical mirrors of the core Dexie entities
- *      (course=stage, scene, chat_session, generated_agent, media_file metadata).
- *      All carry userId for multi-tenant isolation.
- *   3. Commerce — plan / subscription / usage (subscription tiers + quota).
+ * Supabase owns the `auth` schema (auth.users etc. via GoTrue), so this file no
+ * longer defines user/session/account/verification. Business + commerce tables
+ * carry `userId` (text, matching auth.users.id); isolation is enforced by RLS
+ * policies (db/rls.sql: auth.uid() = user_id) PLUS app-layer scoping. The server
+ * may use the service-role key (bypassing RLS) and MUST still scope by userId.
  *
- * Media blobs are NOT stored here — they live in object storage (see lib/storage),
- * referenced by `ossKey`. JSON columns are intentionally untyped to avoid coupling
- * the schema loader to app-side types; the repository layer casts.
+ * Groups:
+ *   1. Business — server-canonical mirrors of the core entities (course=stage,
+ *      scene, chat_session, generated_agent, media_file metadata). All userId-scoped.
+ *   2. Commerce — plan / subscription / usage (subscription tiers + quota).
+ *
+ * Media blobs are NOT stored here — object storage (Supabase Storage / S3),
+ * referenced by `ossKey`. JSON columns intentionally untyped; repo layer casts.
  */
 import {
   pgTable,
@@ -25,69 +26,14 @@ import {
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
 
-// ==================== 1. Auth (better-auth) ====================
-
-export const user = pgTable('user', {
-  id: text('id').primaryKey(),
-  name: text('name').notNull(),
-  email: text('email').notNull().unique(),
-  emailVerified: boolean('email_verified').default(false).notNull(),
-  image: text('image'),
-  role: text('role').default('user').notNull(), // 'user' | 'admin'
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
-
-export const session = pgTable('session', {
-  id: text('id').primaryKey(),
-  expiresAt: timestamp('expires_at').notNull(),
-  token: text('token').notNull().unique(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-  ipAddress: text('ip_address'),
-  userAgent: text('user_agent'),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-});
-
-export const account = pgTable('account', {
-  id: text('id').primaryKey(),
-  accountId: text('account_id').notNull(),
-  providerId: text('provider_id').notNull(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  accessToken: text('access_token'),
-  refreshToken: text('refresh_token'),
-  idToken: text('id_token'),
-  accessTokenExpiresAt: timestamp('access_token_expires_at'),
-  refreshTokenExpiresAt: timestamp('refresh_token_expires_at'),
-  scope: text('scope'),
-  password: text('password'),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
-
-export const verification = pgTable('verification', {
-  id: text('id').primaryKey(),
-  identifier: text('identifier').notNull(),
-  value: text('value').notNull(),
-  expiresAt: timestamp('expires_at').notNull(),
-  createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull(),
-});
-
-// ==================== 2. Business (server-canonical) ====================
+// ==================== 1. Business (server-canonical) ====================
 
 /** A course (= Dexie "stage"): a generated lesson/classroom. */
 export const course = pgTable(
   'course',
   {
     id: text('id').primaryKey(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull(), // auth.users.id (RLS-enforced)
     name: text('name').notNull(),
     description: text('description'),
     languageDirective: text('language_directive'),
@@ -97,6 +43,10 @@ export const course = pgTable(
     videoManifest: jsonb('video_manifest'),
     interactiveMode: boolean('interactive_mode').default(false),
     taskEngineMode: boolean('task_engine_mode').default(false),
+    /** DSL document version stamp (migrate-on-read). */
+    dslVersion: text('dsl_version'),
+    /** App-owned outline snapshot, persisted verbatim (not migrated). */
+    outline: jsonb('outline'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
@@ -110,12 +60,8 @@ export const scene = pgTable(
   'scene',
   {
     id: text('id').primaryKey(),
-    courseId: text('course_id')
-      .notNull()
-      .references(() => course.id, { onDelete: 'cascade' }),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
+    courseId: text('course_id').notNull(),
+    userId: text('user_id').notNull(),
     type: text('type').notNull(),
     title: text('title').notNull(),
     order: integer('order').notNull(),
@@ -135,10 +81,8 @@ export const chatSession = pgTable(
   'chat_session',
   {
     id: text('id').primaryKey(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    courseId: text('course_id').references(() => course.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull(),
+    courseId: text('course_id'),
     type: text('type').notNull(),
     title: text('title').notNull(),
     status: text('status').notNull(),
@@ -159,12 +103,8 @@ export const chatSession = pgTable(
 /** AI-generated agent profile (= Dexie "generatedAgent"). */
 export const generatedAgent = pgTable('generated_agent', {
   id: text('id').primaryKey(),
-  userId: text('user_id')
-    .notNull()
-    .references(() => user.id, { onDelete: 'cascade' }),
-  courseId: text('course_id')
-    .notNull()
-    .references(() => course.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull(),
+  courseId: text('course_id').notNull(),
   name: text('name').notNull(),
   role: text('role').notNull(),
   persona: text('persona').notNull(),
@@ -179,15 +119,10 @@ export const generatedAgent = pgTable('generated_agent', {
 export const mediaFile = pgTable(
   'media_file',
   {
-    // Compound key `${courseId}:${elementId}` mirrors Dexie to stay globally unique.
     id: text('id').primaryKey(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    courseId: text('course_id')
-      .notNull()
-      .references(() => course.id, { onDelete: 'cascade' }),
-    type: text('type').notNull(), // 'image' | 'video'
+    userId: text('user_id').notNull(),
+    courseId: text('course_id').notNull(),
+    type: text('type').notNull(),
     mimeType: text('mime_type').notNull(),
     size: integer('size').notNull(),
     prompt: text('prompt'),
@@ -203,7 +138,7 @@ export const mediaFile = pgTable(
   }),
 );
 
-// ==================== 3. Commerce (subscription tiers + quota) ====================
+// ==================== 2. Commerce (subscription tiers + quota) ====================
 
 /** A subscription plan. id is a slug: 'free' | 'pro' | 'team'. null caps = unlimited. */
 export const plan = pgTable('plan', {
@@ -222,13 +157,9 @@ export const subscription = pgTable(
   'subscription',
   {
     id: text('id').primaryKey(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
-    planId: text('plan_id')
-      .notNull()
-      .references(() => plan.id),
-    status: text('status').notNull(), // 'active' | 'trialing' | 'canceled' | 'past_due'
+    userId: text('user_id').notNull(),
+    planId: text('plan_id').notNull(),
+    status: text('status').notNull(),
     currentPeriodStart: timestamp('current_period_start').notNull(),
     currentPeriodEnd: timestamp('current_period_end').notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
@@ -244,9 +175,7 @@ export const usage = pgTable(
   'usage',
   {
     id: text('id').primaryKey(),
-    userId: text('user_id')
-      .notNull()
-      .references(() => user.id, { onDelete: 'cascade' }),
+    userId: text('user_id').notNull(),
     periodStart: timestamp('period_start').notNull(),
     generations: integer('generations').default(0).notNull(),
     inputTokens: integer('input_tokens').default(0).notNull(),

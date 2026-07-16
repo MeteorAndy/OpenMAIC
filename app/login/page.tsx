@@ -3,7 +3,7 @@
 import { Suspense, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { authClient } from '@/lib/auth-client';
+import { createClient } from '@/lib/supabase/client';
 
 function LoginForm() {
   const router = useRouter();
@@ -18,7 +18,8 @@ function LoginForm() {
     e.preventDefault();
     setLoading(true);
     setError(undefined);
-    const { error } = await authClient.signIn.email({ email, password });
+    const supabase = createClient();
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
     setLoading(false);
     if (error) {
       setError(error.message);
@@ -29,7 +30,8 @@ function LoginForm() {
   }
 
   async function social(provider: 'github' | 'google') {
-    await authClient.signIn.social({ provider, callbackURL: redirect });
+    const supabase = createClient();
+    await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: redirect } });
   }
 
   return (
@@ -94,7 +96,6 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
-  // useSearchParams requires a Suspense boundary for static prerendering.
   return (
     <Suspense fallback={null}>
       <LoginForm />

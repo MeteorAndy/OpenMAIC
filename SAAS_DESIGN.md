@@ -201,3 +201,39 @@ Production container (`docker compose --profile app up`) runs `node server.js` f
 Next standalone build; apply `db:migrate` + `db:seed` as a deploy step (the builder image
 has the tooling). The SaaS branch requires Postgres + `AUTH_SECRET` to run (server imports
 the DB client eagerly).
+
+## 16. Pivot: multi-user SaaS on self-hosted Supabase + Redis (2026-07-16)
+
+User clarification reshaped the target: **web-only (no desktop), multi-user concurrent,
+self-hosted Supabase (full platform) + Redis.** This supersedes the lean better-auth path
+above for the going-forward architecture.
+
+Decisions:
+- **Self-hosted Supabase (full platform):** Postgres + **GoTrue auth** (replaces
+  better-auth) + **RLS** (`auth.uid()` row-level isolation) + Storage + Realtime (available).
+- **Self-hosted Redis:** **BullMQ** job queue + separate **worker process** for the 300s
+  classroom generation (the in-memory Map + filesystem JSON job store is broken for
+  multi-user concurrent); per-user rate limiting; pub/sub for realtime.
+- **Realtime:** Redis pub/sub + Next SSE (chosen over Supabase Realtime for fewer moving parts).
+- **Server-canonical, web-only:** drop Tauri / local-first / offline; server is the system
+  of record. Concurrency control via optimistic locking (`updatedAt`).
+- **No front/back repo split:** multi-**process** monorepo (web + worker), not multi-repo.
+
+Consequences for shipped feat/saas work:
+- `better-auth` + `lib/auth.ts` + `lib/auth-client.ts` + `app/api/auth/[...all]` are
+  **removed**; auth moves to Supabase GoTrue (`@supabase/ssr`).
+- `db/schema.ts` auth tables (`user/session/account/verification`) are **removed** —
+  Supabase owns the `auth` schema. Business/commerce tables keep `userId` (text), enforced
+  by RLS policies + app-layer scoping. Signup→Free-subscription moves to a PG trigger.
+- Phased (max-Supabase, "don't reinvent"): **A** Supabase auth (GoTrue) + RLS + infra →
+  **B** **pg-boss** worker on Supabase Postgres for classroom generation (no Redis) →
+  **C** course data over **Supabase auto REST + RLS** (supabase-js), Dexie dropped — no
+  hand-rolled DocumentStore HTTP backend; DSL validation at server write time; optimistic
+  concurrency via `updatedAt` → **D** Supabase Storage → **E** **Supabase Realtime**
+  (`postgres_changes`) for multi-user live updates — no hand-rolled Redis+SSE → **F**
+  rate-limiting (Redis optional / Edge Function, deferrable). Metering/quota stays custom
+  Drizzle (no Supabase equivalent). Redis largely drops out.
+
+Verification caveat: Supabase GoTrue/RLS **runtime** needs a running self-hosted Supabase
+(`supabase start` or official compose, ~13 services) — typecheck/build stays green here;
+the live auth/RLS flow is verified once Supabase is up locally.

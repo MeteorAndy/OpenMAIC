@@ -39,6 +39,22 @@ services:
       timeout: 5s
       retries: 10
 
+  # Redis: BullMQ generation-job queue + rate limiting + pub/sub realtime (Stage B/E/F).
+  # NOTE: self-hosted Supabase (Postgres+GoTrue+Storage+RLS) is run separately via the
+  # official Supabase docker-compose / `supabase start` — not duplicated here.
+  redis:
+    image: redis:7-alpine
+    container_name: openmaic-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   app:
     profiles: ["app"]
     build: .
@@ -64,4 +80,5 @@ services:
 volumes:
   pgdata:
   miniodata:
+  redisdata:
   openmaic-data:
