@@ -11,13 +11,13 @@ if (!databaseUrl) {
   throw new Error('DATABASE_URL is not set (SaaS branch requires Postgres)');
 }
 
-type DB = ReturnType<typeof createDb>;
-
-function createDb(): DB {
+function createDb() {
   // prepare:false — better compatibility with serverless / pooled connections.
   const queryClient = postgres(databaseUrl!, { max: 10, prepare: false });
   return drizzle(queryClient, { schema });
 }
+
+type DB = ReturnType<typeof createDb>;
 
 const globalForDb = globalThis as unknown as { __openmaic_db?: DB };
 

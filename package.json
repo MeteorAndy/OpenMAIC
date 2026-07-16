@@ -40,6 +40,7 @@
     "@assistant-ui/react-streamdown": "^0.3.3",
     "@aws-sdk/client-s3": "^3.1088.0",
     "@base-ui/react": "^1.1.0",
+    "@better-auth/drizzle-adapter": "^1.6.23",
     "@copilotkit/backend": "^0.37.0",
     "@copilotkit/runtime": "^1.51.2",
     "@earendil-works/pi-agent-core": "0.78.0",
