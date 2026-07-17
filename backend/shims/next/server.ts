@@ -10,7 +10,19 @@
  * ported handlers (req.json / req.headers.get / req.signal) exist on Request.
  * No real Next.js code is pulled into the binary.
  */
-export type NextRequest = Request;
+/**
+ * NextRequest type. Real Next's NextRequest is a Request plus nextUrl/geo/etc.
+ * We extend Request with `nextUrl` so lib helpers that read `req.nextUrl.origin`
+ * (buildRequestOrigin in classroom-storage) typecheck without touching lib.
+ * ponytail: callers that hand a request to such a helper must route it through
+ * src/server/request.ts `withNextUrl` (synthesizes nextUrl); plain Request is
+ * still assignable to resolveModelFromHeaders etc. which read only .headers —
+ * but to keep one consistent type we mark nextUrl required and adapt at the
+ * boundary with withNextUrl.
+ */
+export interface NextRequest extends Request {
+  nextUrl: URL;
+}
 
 export class NextResponse<T = unknown> extends Response {
   static json(data: unknown, init?: ResponseInit): NextResponse {

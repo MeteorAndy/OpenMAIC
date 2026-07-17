@@ -20,17 +20,24 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createMiddleware } from 'hono/factory';
 import { createRemoteJWKSet, jwtVerify } from 'jose';
+import { runRequestUser, getRequestUser as getSharedRequestUser } from '@/lib/server/request-als';
 
 export interface RequestUser {
   userId: string;
   token: string;
 }
 
+// ponytail: the per-request store lives in the SHARED lib/server/request-als.ts
+// so lib/server/session.ts (which Next AND the backend both load) reads the very
+// same AsyncLocalStorage the middleware populates — no build-time shim required.
+// The local userStore below is retained only for requireUser(c) callers that
+// import getRequestUser from this module; both read identical state because the
+// middleware now runs the request inside the shared store.
 const userStore = new AsyncLocalStorage<RequestUser>();
 
 /** Read the per-request user from anywhere (quota.ts / session shim). */
 export function getRequestUser(): RequestUser | null {
-  return userStore.getStore() ?? null;
+  return getSharedRequestUser() ?? userStore.getStore() ?? null;
 }
 
 export interface AuthVars {
@@ -80,7 +87,7 @@ export const authMiddleware = createMiddleware<AuthVars>(async (c, next) => {
     if (!userId) return unauthorized('Token has no subject');
     c.set('userId', userId);
     c.set('token', token);
-    return await userStore.run({ userId, token }, () => next());
+    return await runRequestUser({ userId, token }, () => next());
   } catch {
     return unauthorized('Invalid or expired token');
   }

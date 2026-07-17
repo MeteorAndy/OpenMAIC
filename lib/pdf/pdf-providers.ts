@@ -138,7 +138,6 @@
  */
 
 import { extractText, getDocumentProxy, extractImages } from 'unpdf';
-import sharp from 'sharp';
 import type { PDFParserConfig } from './types';
 import type { ParsedPdfContent } from '@/lib/types/pdf';
 import { PDF_PROVIDERS } from './constants';
@@ -259,6 +258,10 @@ async function parseWithUnpdf(pdfBuffer: Buffer): Promise<ParsedPdfContent> {
       for (let i = 0; i < pageImages.length; i++) {
         const imgData = pageImages[i];
         try {
+          // ponytail: lazy-load sharp — it's a native addon (libvips DLLs) that
+          // breaks bun --compile standalone binaries when imported at module
+          // top level, and it's only needed here (unpdf image extraction).
+          const { default: sharp } = await import('sharp');
           // Use sharp to convert raw image data to PNG base64
           const pngBuffer = await sharp(Buffer.from(imgData.data), {
             raw: {
