@@ -8,33 +8,25 @@
  * - Variable interpolation via {{variable}} syntax
  */
 
-import fs from 'fs';
-import path from 'path';
 import type { PromptId, LoadedPrompt, SnippetId } from './types';
 import { createLogger } from '@/lib/logger';
+// Prompts are baked in at BUILD time (scripts/gen-prompts.mjs -> generated.ts)
+// so they compile into the backend binary instead of being shipped as readable
+// .md files alongside it. Edit the .md sources, then re-run gen-prompts.mjs.
+import { PROMPT_TEMPLATES, PROMPT_SNIPPETS } from './generated';
 const log = createLogger('PromptLoader');
-
-/**
- * Get the prompts directory path
- */
-function getPromptsDir(): string {
-  // In Next.js, use process.cwd() for the project root
-  return path.join(process.cwd(), 'lib', 'prompts');
-}
 
 /**
  * Load a snippet by ID
  */
 export function loadSnippet(snippetId: SnippetId): string {
-  const snippetPath = path.join(getPromptsDir(), 'snippets', `${snippetId}.md`);
-
-  try {
-    return fs.readFileSync(snippetPath, 'utf-8').trim();
-  } catch {
+  const snippet = PROMPT_SNIPPETS[snippetId];
+  if (snippet === undefined) {
     // Fail loud rather than silently shipping `{{snippet:foo}}` to the LLM.
     // A missing snippet is always a config/typo bug — surface at load time.
     throw new Error(`Snippet not found: ${snippetId}`);
   }
+  return snippet;
 }
 
 /**
@@ -71,33 +63,16 @@ export function processConditionalBlocks(
  * Load a prompt by ID
  */
 export function loadPrompt(promptId: PromptId): LoadedPrompt | null {
-  const promptDir = path.join(getPromptsDir(), 'templates', promptId);
-
-  try {
-    // Load system.md
-    const systemPath = path.join(promptDir, 'system.md');
-    let systemPrompt = fs.readFileSync(systemPath, 'utf-8').trim();
-    systemPrompt = processSnippets(systemPrompt);
-
-    // Load user.md (optional, may not exist)
-    const userPath = path.join(promptDir, 'user.md');
-    let userPromptTemplate = '';
-    try {
-      userPromptTemplate = fs.readFileSync(userPath, 'utf-8').trim();
-      userPromptTemplate = processSnippets(userPromptTemplate);
-    } catch {
-      // user.md is optional
-    }
-
-    return {
-      id: promptId,
-      systemPrompt,
-      userPromptTemplate,
-    };
-  } catch (error) {
-    log.error(`Failed to load prompt ${promptId}:`, error);
+  const template = PROMPT_TEMPLATES[promptId];
+  if (!template) {
+    log.error(`Failed to load prompt ${promptId}: not in generated map`);
     return null;
   }
+  return {
+    id: promptId,
+    systemPrompt: processSnippets(template.system),
+    userPromptTemplate: processSnippets(template.user),
+  };
 }
 
 /**
