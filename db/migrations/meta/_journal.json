@@ -5,15 +5,8 @@
     {
       "idx": 0,
       "version": "7",
-      "when": 1784172082767,
-      "tag": "0000_conscious_talisman",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1784184856968,
-      "tag": "0001_tiny_gressill",
+      "when": 1784251194329,
+      "tag": "0000_magical_surge",
       "breakpoints": true
     }
   ]

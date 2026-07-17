@@ -22,6 +22,7 @@ import {
   boolean,
   integer,
   jsonb,
+  uuid,
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
@@ -33,7 +34,7 @@ export const course = pgTable(
   'course',
   {
     id: text('id').primaryKey(),
-    userId: text('user_id').notNull(), // auth.users.id (RLS-enforced)
+    userId: uuid('user_id').notNull(), // auth.users.id (RLS-enforced)
     name: text('name').notNull(),
     description: text('description'),
     languageDirective: text('language_directive'),
@@ -61,7 +62,7 @@ export const scene = pgTable(
   {
     id: text('id').primaryKey(),
     courseId: text('course_id').notNull(),
-    userId: text('user_id').notNull(),
+    userId: uuid('user_id').notNull(),
     type: text('type').notNull(),
     title: text('title').notNull(),
     order: integer('order').notNull(),
@@ -81,7 +82,7 @@ export const chatSession = pgTable(
   'chat_session',
   {
     id: text('id').primaryKey(),
-    userId: text('user_id').notNull(),
+    userId: uuid('user_id').notNull(),
     courseId: text('course_id'),
     type: text('type').notNull(),
     title: text('title').notNull(),
@@ -103,7 +104,7 @@ export const chatSession = pgTable(
 /** AI-generated agent profile (= Dexie "generatedAgent"). */
 export const generatedAgent = pgTable('generated_agent', {
   id: text('id').primaryKey(),
-  userId: text('user_id').notNull(),
+  userId: uuid('user_id').notNull(),
   courseId: text('course_id').notNull(),
   name: text('name').notNull(),
   role: text('role').notNull(),
@@ -120,7 +121,7 @@ export const mediaFile = pgTable(
   'media_file',
   {
     id: text('id').primaryKey(),
-    userId: text('user_id').notNull(),
+    userId: uuid('user_id').notNull(),
     courseId: text('course_id').notNull(),
     type: text('type').notNull(),
     mimeType: text('mime_type').notNull(),
@@ -157,7 +158,7 @@ export const subscription = pgTable(
   'subscription',
   {
     id: text('id').primaryKey(),
-    userId: text('user_id').notNull(),
+    userId: uuid('user_id').notNull(),
     planId: text('plan_id').notNull(),
     status: text('status').notNull(),
     currentPeriodStart: timestamp('current_period_start').notNull(),
@@ -175,7 +176,7 @@ export const usage = pgTable(
   'usage',
   {
     id: text('id').primaryKey(),
-    userId: text('user_id').notNull(),
+    userId: uuid('user_id').notNull(),
     periodStart: timestamp('period_start').notNull(),
     generations: integer('generations').default(0).notNull(),
     inputTokens: integer('input_tokens').default(0).notNull(),

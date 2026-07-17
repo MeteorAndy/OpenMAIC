@@ -46,3 +46,15 @@ drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
+
+-- ==================== Grants (RLS policies are inert without them) ===========
+-- Tables created by the postgres owner; the `authenticated`/`anon` roles that
+-- PostgREST connects as need explicit table privileges, else 42501 permission
+-- denied even with a matching policy. plan is read-only for both roles.
+GRANT SELECT, INSERT, UPDATE, DELETE
+  ON TABLE course, scene, chat_session, generated_agent, media_file, subscription, usage
+  TO authenticated;
+GRANT SELECT ON TABLE plan TO authenticated, anon;
+-- service_role (server/admin, bypasses RLS) still needs table privileges.
+GRANT ALL ON TABLE course, scene, chat_session, generated_agent, media_file, plan, subscription, usage
+  TO service_role;
