@@ -60,6 +60,7 @@ import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
 import { shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
+import { useCourseRealtime } from '@/lib/supabase/realtime';
 
 const log = createLogger('Home');
 
@@ -204,6 +205,10 @@ function HomePage() {
       log.error('Failed to load classrooms:', err);
     }
   };
+
+  // Live-refresh the course list on any remote change to this user's rows
+  // (Supabase Realtime postgres_changes). onChange re-runs loadClassrooms.
+  useCourseRealtime(loadClassrooms);
 
   const { importing, fileInputRef, triggerFileSelect, handleFileChange } = useImportClassroom(
     () => {
