@@ -16,6 +16,7 @@ import { eq, and } from 'drizzle-orm';
 import { getEffectivePlan, periodStartNow } from './plans';
 import { apiError, API_ERROR_CODES } from './api-response';
 import { getCurrentSession } from './session';
+import { checkRateLimit } from './rate-limit';
 import type { NextResponse } from 'next/server';
 
 export interface GenerationCost {
@@ -120,6 +121,8 @@ export async function requireUserWithQuota(): Promise<string | NextResponse> {
   if (!session) {
     return apiError(API_ERROR_CODES.UNAUTHENTICATED, 401, 'Sign in required');
   }
+  const overRate = await checkRateLimit(session.user.id);
+  if (overRate) return overRate;
   const over = await assertGenerationQuota(session.user.id);
   if (over) return over;
   return session.user.id;
