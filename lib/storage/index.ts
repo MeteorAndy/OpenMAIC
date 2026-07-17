@@ -1,16 +1,32 @@
 import { NoopStorageProvider } from './providers/noop';
 import { S3StorageProvider } from './providers/s3';
+import { SupabaseStorageProvider } from './providers/supabase';
 import type { StorageProvider } from './types';
 
 let _provider: StorageProvider | null = null;
 
 /**
- * Selects the storage backend by env. Configure S3_* (see .env.example) to
- * offload media blobs to S3/R2/MinIO; otherwise falls back to the no-op
- * provider (blobs stay client-side in IndexedDB, the local-first default).
+ * Selects the storage backend by env. Prefer Supabase Storage (a PUBLIC bucket
+ * gives browser-GET-able URLs for <img>/<video>, which the S3 endpoint is not)
+ * when SUPABASE_STORAGE_BUCKET is set; fall back to S3-compatible (R2/MinIO),
+ * then to the no-op provider (blobs stay client-side in IndexedDB, the
+ * local-first default).
  */
 export function getStorageProvider(): StorageProvider {
   if (_provider) return _provider;
+
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseBucket = process.env.SUPABASE_STORAGE_BUCKET;
+
+  if (supabaseUrl && supabaseKey && supabaseBucket) {
+    _provider = new SupabaseStorageProvider({
+      url: supabaseUrl,
+      serviceRoleKey: supabaseKey,
+      bucket: supabaseBucket,
+    });
+    return _provider;
+  }
 
   const bucket = process.env.S3_BUCKET;
   const accessKeyId = process.env.S3_ACCESS_KEY_ID;
