@@ -27,7 +27,7 @@ verifyPdfProviderRoute.post('/', async (c) => {
 
     if (providerId === 'mineru-cloud') {
       const clientCloudBase = managed ? undefined : (baseUrl as string | undefined) || undefined;
-      if (clientCloudBase && process.env.NODE_ENV === 'production') {
+      if (clientCloudBase) {
         const ssrfError = await validateUrlForSSRF(clientCloudBase);
         if (ssrfError) {
           return apiError('INVALID_URL', 403, ssrfError);
@@ -55,7 +55,7 @@ verifyPdfProviderRoute.post('/', async (c) => {
     }
 
     const clientBaseUrl = managed ? undefined : (baseUrl as string | undefined) || undefined;
-    if (clientBaseUrl && process.env.NODE_ENV === 'production') {
+    if (clientBaseUrl) {
       const ssrfError = await validateUrlForSSRF(clientBaseUrl);
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);

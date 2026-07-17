@@ -4,8 +4,13 @@
 // any prompt .md). Source-of-truth stays the .md files; this is build-time codegen.
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'node:url';
 
-const root = path.resolve('lib/prompts');
+// ponytail: resolve from this script's location, not process.cwd(), so it runs
+// correctly whether invoked from the repo root (`pnpm prebuild`) or from
+// `backend/` (backend build) — no cwd assumptions.
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const root = path.join(repoRoot, 'lib/prompts');
 const templatesDir = path.join(root, 'templates');
 const snippetsDir = path.join(root, 'snippets');
 
@@ -30,7 +35,7 @@ if (fs.existsSync(snippetsDir)) {
 }
 
 // PBL v2 prompts (lib/pbl/v2/prompts/*.md) — also baked in (IP, fs-read at runtime).
-const pblDir = path.resolve('lib/pbl/v2/prompts');
+const pblDir = path.join(repoRoot, 'lib/pbl/v2/prompts');
 const pblV2 = {};
 if (fs.existsSync(pblDir)) {
   for (const f of fs.readdirSync(pblDir)) {

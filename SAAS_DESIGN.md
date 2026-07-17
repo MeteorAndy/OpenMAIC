@@ -274,3 +274,65 @@ Requires Docker. Uses the official Supabase CLI local stack (Docker under the ho
 
 The CLI's local stack: Postgres at `localhost:5432` (postgres/postgres), the gateway
 (API/Auth/Storage/Realtime) at `localhost:8000`. First run pulls a lot of images.
+
+## 18. Compiled Bun/Hono backend split (2026-07-17)
+
+The generation engine is now a **separately compiled binary**, split out of Next.js so
+the prompt IP is not shipped as readable text and the server-side provider-key + Supabase
+auth logic lives behind a compiled boundary. Next.js becomes the UI + a thin same-origin
+API proxy.
+
+**Process / deploy topology**
+
+| Process | Role | Build |
+|---|---|---|
+| **Next.js (web)** | UI pages + `/api/*` **proxy** to the backend (not the route handlers). Standalone build. | `pnpm build` (`next build`) |
+| **Compiled backend (binary)** | All API routes (Hono on Bun), Supabase JWT auth, provider-key resolution, quota/metering, prompt execution. | `cd backend && bun run build` → `dist/openmaic-backend{.exe,-linux,-darwin}` |
+
+The backend (`backend/src/index.ts`) is a Hono app compiled with `bun build --compile`
+(`--target=bun-<os>-<arch>-modern`). Every former `app/api/<path>/route.ts` handler is
+ported to `backend/src/routes/<name>.ts`, reusing `lib/*` and `db/*` verbatim — only the
+HTTP layer is adapted (Hono `Context` instead of `NextRequest`; Hono returns Web `Response`
+unchanged so `apiSuccess`/`apiError` and SSE `Response(readable)` pass through). `lib/` and
+`db/` are shared between web and backend via `backend/tsconfig.json` path overrides (e.g.
+`@/lib/server/session` resolves to the backend's Bearer-based shim, not the Next cookie
+original — same exported shape, different transport).
+
+**Next → backend proxy (same-origin, cookie-preserving).** `next.config.ts` `rewrites()`:
+`/api/:path*` → `${NEXT_PUBLIC_BACKEND_URL}/api/:path*` when `NEXT_PUBLIC_BACKEND_URL` is
+set; unset → Next serves its own `app/api/**` (the original Next routes are still present
+on this branch, shadowed by the proxy, and are removed in a follow-up step). The proxy is
+same-origin from the browser's point of view, so the Supabase session cookie set by
+`@supabase/ssr` flows through to the backend; SSE streams pass through unchanged.
+
+**Auth: stateless Supabase JWT (cookie or Bearer).** `backend/src/server/auth.ts` exposes a
+Hono `authMiddleware` used by protected routes. The user's token is resolved two ways:
+1. `Authorization: Bearer <jwt>` (direct API clients), or
+2. the Supabase session cookie `sb-<ref>-auth-token` the browser writes via `@supabase/ssr`
+   (value `base64-<base64url session JSON>`; the middleware decodes it to `access_token`).
+
+The JWT is verified **ES256** against GoTrue's JWKS
+(`${NEXT_PUBLIC_SUPABASE_URL}/auth/v1/.well-known/jwks.json`, cached + kid-refreshed via
+`jose`'s `createRemoteJWKSet`); `userId = payload.sub`, stored on the Hono context and in
+an `AsyncLocalStorage` so `lib/server/quota.ts` and the `getCurrentSession` shim read it
+without a per-call change. No server-side session store — GoTrue is the authority.
+
+**Prompt baking (anti-reverse / IP).** Prompt `.md` files under `lib/prompts/{templates,
+snippets}/` and `lib/pbl/v2/prompts/` are **compiled into the binary**, never shipped as
+readable files alongside it. `scripts/gen-prompts.mjs` reads those `.md` files and emits
+`lib/prompts/generated.ts` (`PROMPT_TEMPLATES`, `PROMPT_SNIPPETS`, `PBL_V2_PROMPTS`), which
+`bun build --compile` embeds. Source-of-truth stays the `.md` files; this is build-time
+codegen only.
+
+**Regenerate-on-build.** `gen-prompts.mjs` is wired as a `prebuild` script in both
+`package.json` (root, runs before `next build` via the npm/pnpm lifecycle) and
+`backend/package.json` (runs before `bun build --compile`). The script resolves paths from
+its own location (not `process.cwd()`), so it regenerates `generated.ts` correctly whether
+invoked from the repo root or from `backend/`. `lib/prompts/generated.ts` is the build
+artifact and is checked in so the backend binary and the Next app stay in sync.
+
+**Operational.** Backend reads env at runtime from `Bun.env`/`process.env` — nothing is
+baked except prompts. Default port `8787` (`PORT`/`BACKEND_PORT`); `Bun.serve` uses
+`idleTimeout: 255` so the long SSE generation streams (chat, agent-edit, scene-outlines,
+classroom-media — up to the 300s per-route budget) are not killed mid-stream.
+

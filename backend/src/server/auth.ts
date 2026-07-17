@@ -85,7 +85,10 @@ function extractTokenFromCookie(cookieHeader: string | undefined | null): string
 export const authMiddleware = createMiddleware<AuthVars>(async (c, next) => {
   const auth = c.req.header('authorization') || c.req.header('Authorization') || '';
   let token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
-  if (!token) token = extractTokenFromCookie(c.req.header('cookie'));
+  if (!token) {
+    const fromCookie = extractTokenFromCookie(c.req.header('cookie'));
+    if (fromCookie) token = fromCookie;
+  }
   if (!token) return unauthorized('Missing Bearer token or session cookie');
 
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {

@@ -5,6 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "bun run src/index.ts",
+    "gen:prompts": "node ../scripts/gen-prompts.mjs",
+    "prebuild": "node ../scripts/gen-prompts.mjs",
     "build": "bun build src/index.ts --compile --target=bun-windows-x64-modern --outfile=../dist/openmaic-backend.exe",
     "build:linux": "bun build src/index.ts --compile --target=bun-linux-x64-modern --outfile=../dist/openmaic-backend-linux",
     "build:darwin": "bun build src/index.ts --compile --target=bun-darwin-arm64 --outfile=../dist/openmaic-backend-darwin",

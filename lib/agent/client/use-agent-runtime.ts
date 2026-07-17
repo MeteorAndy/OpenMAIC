@@ -24,7 +24,7 @@ import {
 import type { AgentEvent } from '@earendil-works/pi-agent-core';
 import { useStageStore } from '@/lib/store/stage';
 import { getCurrentModelConfig } from '@/lib/utils/model-config';
-import type { SceneContextMap } from '@/app/api/agent/edit/route';
+import type { SceneContextMap } from '@/lib/agent/edit-types';
 import { mergeAssistantParts, type PiPart } from './merge-assistant-parts';
 import { resolveSceneOutline } from './resolve-scene-outline';
 import { planRegenerateApply, type RegenerateDetails } from './apply-regenerate';
