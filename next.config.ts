@@ -33,6 +33,14 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  // Front/back split: proxy /api/* to the compiled backend (same-origin, so the
+  // browser's Supabase session cookie flows through; SSE streams through too).
+  // Unset NEXT_PUBLIC_BACKEND_URL -> no proxy (Next serves its own /api/*).
+  async rewrites() {
+    const backend = process.env.NEXT_PUBLIC_BACKEND_URL;
+    if (!backend) return [];
+    return [{ source: '/api/:path*', destination: `${backend}/api/:path*` }];
+  },
 };
 
 export default nextConfig;

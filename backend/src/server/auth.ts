@@ -1,21 +1,15 @@
 /**
  * Backend auth: stateless Supabase JWT validation.
  *
- * The browser Supabase client owns the session; the frontend sends its
- * access_token as `Authorization: Bearer <jwt>`. Self-hosted + cloud GoTrue
- * issue **ES256** user JWTs (derived from the EC keypair baked off JWT_SECRET)
- * and publish the public key at /auth/v1/.well-known/jwks.json, so we verify
- * ES256 via the JWKS (jose createRemoteJWKSet caches + refreshes on kid miss).
- * userId = payload.sub.
+ * Accepts the token two ways:
+ *  - Authorization: Bearer <jwt>  (direct API clients)
+ *  - Supabase session cookie sb-<ref>-auth-token (browser via the Next proxy,
+ *    which forwards cookies same-origin). @supabase/ssr writes the value as
+ *    "base64-<base64url of the session JSON>"; we decode -> access_token.
  *
- * userId is exposed two ways so existing lib code works unchanged:
- *   - Hono context variable (requireUser(c))
- *   - AsyncLocalStorage (getRequestUser()) — read by the session shim that
- *     lib/server/quota.ts reaches via getCurrentSession().
- *
- * RLS is preserved by a per-request Supabase client that impersonates the user
- * (src/server/supabase-server.ts), but the Phase-1 routes (health/quota/chat)
- * only touch the Drizzle admin connection, so that client is rarely exercised.
+ * Self-hosted + cloud GoTrue issue ES256 user JWTs and publish the public key
+ * at /auth/v1/.well-known/jwks.json, so we verify ES256 via the JWKS (jose
+ * createRemoteJWKSet caches + refreshes on kid miss). userId = payload.sub.
  */
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createMiddleware } from 'hono/factory';
@@ -27,12 +21,6 @@ export interface RequestUser {
   token: string;
 }
 
-// ponytail: the per-request store lives in the SHARED lib/server/request-als.ts
-// so lib/server/session.ts (which Next AND the backend both load) reads the very
-// same AsyncLocalStorage the middleware populates — no build-time shim required.
-// The local userStore below is retained only for requireUser(c) callers that
-// import getRequestUser from this module; both read identical state because the
-// middleware now runs the request inside the shared store.
 const userStore = new AsyncLocalStorage<RequestUser>();
 
 /** Read the per-request user from anywhere (quota.ts / session shim). */
@@ -66,13 +54,39 @@ function unauthorized(message: string) {
 }
 
 /**
- * Hono middleware: extract Bearer, verify ES256 via GoTrue's JWKS, set userId on
- * the context + AsyncLocalStorage for the request. Protected routes only.
+ * Extract the Supabase access_token from the session cookie the browser client
+ * writes (sb-<ref>-auth-token = "base64-<base64url session JSON>"). Handles the
+ * common single-cookie case; chunked sessions (.0/.1) are a rare follow-up.
+ */
+function extractTokenFromCookie(cookieHeader: string | undefined | null): string | null {
+  if (!cookieHeader) return null;
+  for (const part of cookieHeader.split(';')) {
+    const eq = part.indexOf('=');
+    if (eq === -1) continue;
+    const name = part.slice(0, eq).trim();
+    const value = part.slice(eq + 1).trim();
+    if (/^sb-.+-auth-token$/.test(name) && value.startsWith('base64-')) {
+      try {
+        const session = JSON.parse(Buffer.from(value.slice(7), 'base64url').toString('utf8'));
+        if (typeof session.access_token === 'string') return session.access_token;
+      } catch {
+        /* malformed cookie part — keep scanning */
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Hono middleware: resolve the token from the Bearer header OR the Supabase
+ * session cookie, verify ES256 via GoTrue's JWKS, set userId on the context +
+ * AsyncLocalStorage. Protected routes only.
  */
 export const authMiddleware = createMiddleware<AuthVars>(async (c, next) => {
   const auth = c.req.header('authorization') || c.req.header('Authorization') || '';
-  const token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
-  if (!token) return unauthorized('Missing Bearer token');
+  let token = auth.startsWith('Bearer ') ? auth.slice(7).trim() : '';
+  if (!token) token = extractTokenFromCookie(c.req.header('cookie'));
+  if (!token) return unauthorized('Missing Bearer token or session cookie');
 
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
     console.error('[auth] NEXT_PUBLIC_SUPABASE_URL is not set — cannot verify tokens');
