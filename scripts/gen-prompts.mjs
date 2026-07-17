@@ -29,18 +29,31 @@ if (fs.existsSync(snippetsDir)) {
   }
 }
 
+// PBL v2 prompts (lib/pbl/v2/prompts/*.md) — also baked in (IP, fs-read at runtime).
+const pblDir = path.resolve('lib/pbl/v2/prompts');
+const pblV2 = {};
+if (fs.existsSync(pblDir)) {
+  for (const f of fs.readdirSync(pblDir)) {
+    if (!f.endsWith('.md')) continue;
+    pblV2[f.replace(/\.md$/, '')] = fs.readFileSync(path.join(pblDir, f), 'utf8').trim();
+  }
+}
+
 const out =
-  '// AUTO-GENERATED from lib/prompts/**/*.md by scripts/gen-prompts.mjs — do not edit.\n' +
-  '// Bundled into the compiled backend binary so prompts are NOT shipped as\n' +
-  '// readable .md files alongside it. Edit the .md sources and re-run the script.\n' +
+  '// AUTO-GENERATED from lib/prompts/**/*.md + lib/pbl/v2/prompts/*.md by\n' +
+  '// scripts/gen-prompts.mjs — do not edit. Bundled into the compiled backend\n' +
+  '// binary so prompts are NOT shipped as readable .md files alongside it.\n' +
   'export const PROMPT_TEMPLATES = ' +
   JSON.stringify(templates, null, 2) +
   ' as Record<string, { system: string; user: string }>;\n' +
   'export const PROMPT_SNIPPETS = ' +
   JSON.stringify(snippets, null, 2) +
+  ' as Record<string, string>;\n' +
+  'export const PBL_V2_PROMPTS = ' +
+  JSON.stringify(pblV2, null, 2) +
   ' as Record<string, string>;\n';
 
 fs.writeFileSync(path.join(root, 'generated.ts'), out);
 console.log(
-  `gen-prompts: ${Object.keys(templates).length} templates, ${Object.keys(snippets).length} snippets -> lib/prompts/generated.ts`,
+  `gen-prompts: ${Object.keys(templates).length} templates, ${Object.keys(snippets).length} snippets, ${Object.keys(pblV2).length} PBL v2 -> lib/prompts/generated.ts`,
 );
