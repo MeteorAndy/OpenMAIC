@@ -1,49 +1,12 @@
 import { asc, eq } from 'drizzle-orm';
 import { plan } from '@/db/schema';
+import { DEFAULT_PLANS, type SeedPlan } from '@/lib/server/plans';
 import { CheckoutButton } from './checkout-button';
 
 // Plan table reads must happen per-request, never at build time.
 export const dynamic = 'force-dynamic';
 
-interface PlanView {
-  id: string;
-  name: string;
-  priceMonthlyCents: number;
-  maxGenerationsPerPeriod: number | null;
-  maxTokensPerPeriod: number | null;
-  maxMediaSecondsPerPeriod: number | null;
-}
-
-// Mirrors db/seed.ts (Free / Pro / Team) — used when the DB is unavailable or
-// the plan table has not been seeded yet.
-const FALLBACK_PLANS: PlanView[] = [
-  {
-    id: 'free',
-    name: 'Free',
-    priceMonthlyCents: 0,
-    maxGenerationsPerPeriod: 20,
-    maxTokensPerPeriod: 200_000,
-    maxMediaSecondsPerPeriod: 60,
-  },
-  {
-    id: 'pro',
-    name: 'Pro',
-    priceMonthlyCents: 1900,
-    maxGenerationsPerPeriod: 500,
-    maxTokensPerPeriod: 10_000_000,
-    maxMediaSecondsPerPeriod: 1800,
-  },
-  {
-    id: 'team',
-    name: 'Team',
-    priceMonthlyCents: 9900,
-    maxGenerationsPerPeriod: null,
-    maxTokensPerPeriod: null,
-    maxMediaSecondsPerPeriod: null,
-  },
-];
-
-async function loadPlans(): Promise<PlanView[]> {
+async function loadPlans(): Promise<SeedPlan[]> {
   try {
     // db/client throws at module evaluation when DATABASE_URL is unset, so it
     // must be imported lazily inside the try for the fallback to engage.
@@ -60,9 +23,9 @@ async function loadPlans(): Promise<PlanView[]> {
       .from(plan)
       .where(eq(plan.isActive, true))
       .orderBy(asc(plan.priceMonthlyCents));
-    return rows.length > 0 ? rows : FALLBACK_PLANS;
+    return rows.length > 0 ? rows : DEFAULT_PLANS;
   } catch {
-    return FALLBACK_PLANS;
+    return DEFAULT_PLANS;
   }
 }
 

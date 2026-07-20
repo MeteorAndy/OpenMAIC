@@ -158,15 +158,8 @@ function draftOf(p: AdminPlan): PlanDraft {
 }
 
 function isDirty(d: PlanDraft, p: AdminPlan): boolean {
-  const o = draftOf(p);
-  return (
-    d.name !== o.name ||
-    d.priceYuan !== o.priceYuan ||
-    d.maxGenerations !== o.maxGenerations ||
-    d.maxTokens !== o.maxTokens ||
-    d.maxMediaSeconds !== o.maxMediaSeconds ||
-    d.isActive !== o.isActive
-  );
+  // Same shape, same key order (both built by draftOf) — stringify is a safe compare.
+  return JSON.stringify(d) !== JSON.stringify(draftOf(p));
 }
 
 /** '' -> null (不限); positive int -> number; anything else -> undefined (invalid). */
@@ -183,29 +176,17 @@ function formatQuotaValue(v: number | null): string {
 
 /** Field-by-field diff of a plan.update detail; only changed fields, joined by '、'. */
 function diffPlanSnapshot(before: AuditPlanSnapshot, after: AuditPlanSnapshot): string {
-  const parts: string[] = [];
-  if (before.name !== after.name) parts.push(`名称: ${before.name} → ${after.name}`);
-  if (before.priceMonthlyCents !== after.priceMonthlyCents) {
-    parts.push(`价格: ¥${before.priceMonthlyCents / 100} → ¥${after.priceMonthlyCents / 100}`);
-  }
-  if (before.maxGenerationsPerPeriod !== after.maxGenerationsPerPeriod) {
-    parts.push(
-      `月生成次数: ${formatQuotaValue(before.maxGenerationsPerPeriod)} → ${formatQuotaValue(after.maxGenerationsPerPeriod)}`,
-    );
-  }
-  if (before.maxTokensPerPeriod !== after.maxTokensPerPeriod) {
-    parts.push(
-      `月 Tokens: ${formatQuotaValue(before.maxTokensPerPeriod)} → ${formatQuotaValue(after.maxTokensPerPeriod)}`,
-    );
-  }
-  if (before.maxMediaSecondsPerPeriod !== after.maxMediaSecondsPerPeriod) {
-    parts.push(
-      `媒体秒: ${formatQuotaValue(before.maxMediaSecondsPerPeriod)} → ${formatQuotaValue(after.maxMediaSecondsPerPeriod)}`,
-    );
-  }
-  if (before.isActive !== after.isActive) {
-    parts.push(`上架: ${before.isActive ? '是' : '否'} → ${after.isActive ? '是' : '否'}`);
-  }
+  const yn = (v: boolean) => (v ? '是' : '否');
+  const yuan = (c: number) => `¥${c / 100}`;
+  const fields: [string, string, string][] = [
+    ['名称', before.name, after.name],
+    ['价格', yuan(before.priceMonthlyCents), yuan(after.priceMonthlyCents)],
+    ['月生成次数', formatQuotaValue(before.maxGenerationsPerPeriod), formatQuotaValue(after.maxGenerationsPerPeriod)],
+    ['月 Tokens', formatQuotaValue(before.maxTokensPerPeriod), formatQuotaValue(after.maxTokensPerPeriod)],
+    ['媒体秒', formatQuotaValue(before.maxMediaSecondsPerPeriod), formatQuotaValue(after.maxMediaSecondsPerPeriod)],
+    ['上架', yn(before.isActive), yn(after.isActive)],
+  ];
+  const parts = fields.filter(([, b, a]) => b !== a).map(([label, b, a]) => `${label}: ${b} → ${a}`);
   return parts.length > 0 ? parts.join('、') : '无字段变化';
 }
 
@@ -409,16 +390,20 @@ export function AdminConsole() {
       if (!base) return prev;
       return { ...prev, [id]: { ...base, ...patch } };
     });
+    clearPlanMessage(id);
+  }
+
+  function setPlanMessage(id: string, ok: boolean, text: string) {
+    setPlanMessages((prev) => ({ ...prev, [id]: { ok, text } }));
+  }
+
+  function clearPlanMessage(id: string) {
     setPlanMessages((prev) => {
       if (!(id in prev)) return prev;
       const next = { ...prev };
       delete next[id];
       return next;
     });
-  }
-
-  function setPlanMessage(id: string, ok: boolean, text: string) {
-    setPlanMessages((prev) => ({ ...prev, [id]: { ok, text } }));
   }
 
   async function onSavePlan(p: AdminPlan) {
@@ -437,12 +422,7 @@ export function AdminConsole() {
       return;
     }
     setPlanSaving((prev) => ({ ...prev, [p.id]: true }));
-    setPlanMessages((prev) => {
-      if (!(p.id in prev)) return prev;
-      const next = { ...prev };
-      delete next[p.id];
-      return next;
-    });
+    clearPlanMessage(p.id);
     try {
       const res = await fetch(`/api/admin/plans/${p.id}`, {
         method: 'PUT',

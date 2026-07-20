@@ -6,6 +6,7 @@
  * and calls GoTrue's admin REST API for mutations (ban/unban) so GoTrue's
  * own bookkeeping (refresh-token revocation) stays correct.
  */
+import { createClient } from '@supabase/supabase-js';
 import { db } from '@/db/client';
 import { sql } from 'drizzle-orm';
 
@@ -67,16 +68,9 @@ export async function setUserBanned(userId: string, banned: boolean): Promise<vo
   if (!base || !key) {
     throw new Error('SUPABASE_SERVICE_ROLE_KEY / NEXT_PUBLIC_SUPABASE_URL not set');
   }
-  const res = await fetch(`${base}/auth/v1/admin/users/${userId}`, {
-    method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({ ban_duration: banned ? '876000h' : 'none' }),
+  const admin = createClient(base, key, { auth: { autoRefreshToken: false, persistSession: false } });
+  const { error } = await admin.auth.admin.updateUserById(userId, {
+    ban_duration: banned ? '876000h' : 'none',
   });
-  if (!res.ok) {
-    throw new Error(`GoTrue admin ${banned ? 'ban' : 'unban'} failed: ${res.status} ${await res.text()}`);
-  }
+  if (error) throw new Error(`GoTrue admin ${banned ? 'ban' : 'unban'} failed: ${error.message}`);
 }

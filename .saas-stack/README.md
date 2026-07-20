@@ -36,7 +36,7 @@ git checkout feat/saas && pnpm install
 # 1. Supabase 栈
 cp .saas-stack/.env.example .saas-stack/.env
 #   编辑 .env:POSTGRES_PASSWORD、JWT_SECRET、ANON_KEY/SERVICE_ROLE_KEY(或
-#   ANON_KEY_ASYMMETRIC 一对 ES256 JWK)、DASHBOARD_PASSWORD、SITE_URL、SMTP_*(见 §5)
+#   ANON_KEY_ASYMMETRIC 一对 ES256 JWK)、DASHBOARD_PASSWORD、SITE_URL、SMTP_*(见 §4)
 docker compose -f .saas-stack/docker-compose.yml --env-file .saas-stack/.env up -d
 
 # 2. 应用环境(仓库根)
@@ -96,14 +96,14 @@ SMTP_FROM=no-reply@your-domain
 
 `EMAIL_PROVIDER` 缺省为 `log`(只记日志不发送)—— 邮件永远是业务的软依赖,发信失败不会阻断开通流程,只会记一条 warn。
 
-## 4.5 监控与健康检查
+## 5. 监控与健康检查
 
 - **健康端点**:后端 `GET /api/health`(无需鉴权,返回能力位)。用 Uptime Kuma / 阿里云云监控 / cron+curl 每 1–5 分钟探一次,非 200 告警。
 - **容器健康**:`.saas-stack` compose 各服务自带 healthcheck,`docker ps` 一眼可见 unhealthy。
 - **日志**:后端二进制 stdout(建议 systemd/journald 或 `docker logs`);Postgres/Kong 在容器日志里。至少把后端日志持久化到文件并轮转。
-- **容量**:关注 `volumes/db/data` 与 `volumes/storage` 磁盘占用;备份脚本(§5)失败应告警(cron 邮件或 curl 告警钩子)。
+- **容量**:关注 `volumes/db/data` 与 `volumes/storage` 磁盘占用;备份脚本(§6)失败应告警(cron 邮件或 curl 告警钩子)。
 
-## 5. 备份与恢复
+## 6. 备份与恢复
 
 ```bash
 # 数据库(auth + 业务全量,默认保留 14 份)
@@ -117,7 +117,7 @@ gunzip -c /var/backups/openmaic/openmaic-saas-<ts>.sql.gz | docker exec -i supab
 - `.saas-stack/volumes/db/data/`(Postgres)与 `volumes/storage/`(用户上传)是唯一不可重建的状态,按上面脚本 + 目录级快照双保险。
 - Redis 数据可重建,不备份。
 
-## 6. 日常运营
+## 7. 日常运营
 
 - **开通/调整套餐**:访问 `/admin`(账号需在 `ADMIN_USER_IDS`),或
   `curl -X POST $BACKEND/api/admin/subscription -H "Authorization: Bearer <admin JWT>" -d '{"userId":"...","planId":"pro"}'`
@@ -126,7 +126,7 @@ gunzip -c /var/backups/openmaic/openmaic-saas-<ts>.sql.gz | docker exec -i supab
 - **封禁/解封**:`/admin` 行内按钮(走 GoTrue admin API,立即吊销登录态);
   改邮箱/删号等底层操作用 Supabase Studio(`http://<kong>/` → DASHBOARD 账密)。
 
-## 7. 支付接入(给客户/渠道接线时读)
+## 8. 支付接入(给客户/渠道接线时读)
 
 接缝已就位,接 Stripe / 微信支付 / 支付宝只需三步,**不改业务代码**:
 
@@ -136,9 +136,9 @@ gunzip -c /var/backups/openmaic/openmaic-saas-<ts>.sql.gz | docker exec -i supab
 2. 在 `billing.ts` 的 `providers` 表里注册;
 3. 配 env:`BILLING_PROVIDER=<id>` + provider 密钥。
 
-接线点:前端 `/pricing` 页 CTA → `POST /api/billing/checkout` 拿 `checkoutUrl` 跳转;provider 回调 → `POST /api/billing/webhook`(公网可达,验签在 provider 内)。过渡期:客户线下付款,运营用 §6 手动开通,体验完整可用。
+接线点:前端 `/pricing` 页 CTA → `POST /api/billing/checkout` 拿 `checkoutUrl` 跳转;provider 回调 → `POST /api/billing/webhook`(公网可达,验签在 provider 内)。过渡期:客户线下付款,运营用 §7 手动开通,体验完整可用。
 
-## 8. 上线安全检查清单
+## 9. 上线安全检查清单
 
 - [ ] `.saas-stack/.env` 全部默认密钥已更换(POSTGRES_PASSWORD / JWT_SECRET / DASHBOARD_PASSWORD / SECRET_KEY_BASE / S3 密钥)
 - [ ] `ENABLE_EMAIL_AUTOCONFIRM=false`
@@ -147,12 +147,12 @@ gunzip -c /var/backups/openmaic/openmaic-saas-<ts>.sql.gz | docker exec -i supab
 - [ ] `ADMIN_USER_IDS` 只含运营账号
 - [ ] `ALLOWED_ORIGIN` 已设置为正式域名(后端不再回显任意来源)
 - [ ] `EMAIL_PROVIDER=smtp` 且测试过一封真实邮件(开通一个测试套餐)
-- [ ] `/api/health` 已挂外部监控(§4.5)
+- [ ] `/api/health` 已挂外部监控(§5)
 - [ ] Kong 8000 不直接暴露公网(仅 Next 与后端可达),对外只开 443
 - [ ] 备份 cron 已跑通过一次,且**演练过恢复**
 - [ ] `RATE_LIMIT_PER_MINUTE` 按客群调好(默认 30)
 
-## 9. 已知边界(设计文档明确 deferred,接单前评估)
+## 10. 已知边界(设计文档明确 deferred,接单前评估)
 
 - team/org 多席位、细粒度限流、同步冲突解决(现 last-write-wins)、桌面版本地数据迁移
 - 管理后台覆盖日常(套餐/用量/封禁);改邮箱、删号等底层操作仍需 Supabase Studio

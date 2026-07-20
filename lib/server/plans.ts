@@ -24,6 +24,32 @@ export const FREE_PLAN: PlanCaps = {
   maxMediaSecondsPerPeriod: 60,
 };
 
+/** Plan row incl. price — the shape db/seed.ts upserts and /pricing renders. */
+export interface SeedPlan extends PlanCaps {
+  priceMonthlyCents: number;
+}
+
+/** Canonical plan list: single source for db:seed and the /pricing fallback. */
+export const DEFAULT_PLANS: SeedPlan[] = [
+  { ...FREE_PLAN, priceMonthlyCents: 0 },
+  {
+    id: 'pro',
+    name: 'Pro',
+    priceMonthlyCents: 1900,
+    maxGenerationsPerPeriod: 500,
+    maxTokensPerPeriod: 10_000_000,
+    maxMediaSecondsPerPeriod: 1800,
+  },
+  {
+    id: 'team',
+    name: 'Team',
+    priceMonthlyCents: 9900,
+    maxGenerationsPerPeriod: null,
+    maxTokensPerPeriod: null,
+    maxMediaSecondsPerPeriod: null,
+  },
+];
+
 /** Start of the current UTC calendar month — the usage reset boundary. */
 export function periodStartNow(now: Date = new Date()): Date {
   return new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));

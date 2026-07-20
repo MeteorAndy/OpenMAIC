@@ -7,11 +7,8 @@
  * Replace with a role column when the admin surface outgrows this.
  */
 export function isAdmin(userId: string): boolean {
-  const raw = process.env.ADMIN_USER_IDS;
-  if (!raw) return false;
-  return raw
+  return (process.env.ADMIN_USER_IDS ?? '')
     .split(',')
     .map((s) => s.trim())
-    .filter(Boolean)
     .includes(userId);
 }

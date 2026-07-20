@@ -150,9 +150,12 @@ note describing the commercial hosted-service form. `mathml2omml` LGPL handling 
 > - **Billing seam** — `lib/server/billing.ts` (`BillingProvider` + `manual`
 >   provider + `setUserPlan`/`cancelUserPlan` mutations) and `/api/billing/*
 >   {checkout,portal,webhook}` routes. Real providers (Stripe/微信/支付宝) drop in
->   without touching business code — see `.saas-stack/README.md` §7.
-> - **Admin** — `ADMIN_USER_IDS` env gate (`lib/server/admin.ts`),
->   `/api/admin/{plans,users,subscription}` routes, minimal `/admin` page.
+>   without touching business code — see `.saas-stack/README.md` §8.
+> - **Admin** — `ADMIN_USER_IDS` env gate (`lib/server/admin.ts`), full dashboard
+>   at `/admin`: KPI overview (`/api/admin/overview`), user list with emails +
+>   per-user usage detail, inline plan management (`PUT /api/admin/plans/:id`),
+>   ban/unban (GoTrue admin API), and a DB-backed audit trail
+>   (`admin_audit_log` + `GET /api/admin/audit-log`; RLS closed to clients).
 > - **Email seam** — `lib/server/email.ts` (app-level; auth emails are GoTrue's,
 >   via `.saas-stack` SMTP env).
 > - **Pricing** — `/pricing` page (DB-backed, CTA wired to `/api/billing/checkout`,

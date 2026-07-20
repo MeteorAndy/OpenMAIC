@@ -1,40 +1,15 @@
 /**
  * Seed subscription plans (Free / Pro / Team). Run once after migrate:
  *   DATABASE_URL=... pnpm db:seed
- * Idempotent (upsert). Caps mirror lib/server/plans.ts FREE_PLAN defaults.
+ * Idempotent (upsert). Plan rows come from lib/server/plans.ts DEFAULT_PLANS
+ * (single source shared with the /pricing fallback).
  */
 import { db } from './client';
 import { plan } from './schema';
-
-const PLANS = [
-  {
-    id: 'free',
-    name: 'Free',
-    priceMonthlyCents: 0,
-    maxGenerationsPerPeriod: 20,
-    maxTokensPerPeriod: 200_000,
-    maxMediaSecondsPerPeriod: 60,
-  },
-  {
-    id: 'pro',
-    name: 'Pro',
-    priceMonthlyCents: 1900,
-    maxGenerationsPerPeriod: 500,
-    maxTokensPerPeriod: 10_000_000,
-    maxMediaSecondsPerPeriod: 1800,
-  },
-  {
-    id: 'team',
-    name: 'Team',
-    priceMonthlyCents: 9900,
-    maxGenerationsPerPeriod: null,
-    maxTokensPerPeriod: null,
-    maxMediaSecondsPerPeriod: null,
-  },
-] as const;
+import { DEFAULT_PLANS } from '../lib/server/plans';
 
 async function main() {
-  for (const p of PLANS) {
+  for (const p of DEFAULT_PLANS) {
     await db
       .insert(plan)
       .values({

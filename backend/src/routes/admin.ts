@@ -33,32 +33,29 @@ adminRoute.use('*', async (c, next) => {
 
 /** Business KPIs for the dashboard header. */
 adminRoute.get('/overview', async (c) => {
-  const periodStart = periodStartNow();
-  const [userStats] = (await db.execute(sql`
+  const periodStart = periodStartNow().toISOString();
+  const [stats] = (await db.execute(sql`
     select
-      count(*)::int as "totalUsers",
-      count(*) filter (where banned_until is not null and banned_until > now())::int as "bannedUsers"
-    from auth.users
-  `)) as unknown as { totalUsers: number; bannedUsers: number }[];
-  const [subStats] = (await db.execute(sql`
-    select count(*)::int as "paidUsers"
-    from public.subscription
-    where status = 'active' and plan_id <> 'free' and current_period_end > now()
-  `)) as unknown as { paidUsers: number }[];
-  const [usageStats] = (await db.execute(sql`
-    select
-      coalesce(sum(generations), 0)::int as "generations",
-      coalesce(sum(input_tokens + output_tokens), 0)::bigint as "tokens",
-      coalesce(sum(media_seconds), 0)::int as "mediaSeconds"
-    from public.usage
-    where period_start = ${periodStart.toISOString()}::timestamptz
-  `)) as unknown as { generations: number; tokens: number; mediaSeconds: number }[];
-  return apiSuccess({
-    periodStart: periodStart.toISOString(),
-    ...userStats,
-    ...subStats,
-    ...usageStats,
-  });
+      (select count(*)::int from auth.users) as "totalUsers",
+      (select count(*)::int from auth.users
+        where banned_until is not null and banned_until > now()) as "bannedUsers",
+      (select count(*)::int from public.subscription
+        where status = 'active' and plan_id <> 'free' and current_period_end > now()) as "paidUsers",
+      (select coalesce(sum(generations), 0)::int from public.usage
+        where period_start = ${periodStart}::timestamptz) as "generations",
+      (select coalesce(sum(input_tokens + output_tokens), 0)::bigint from public.usage
+        where period_start = ${periodStart}::timestamptz) as "tokens",
+      (select coalesce(sum(media_seconds), 0)::int from public.usage
+        where period_start = ${periodStart}::timestamptz) as "mediaSeconds"
+  `)) as unknown as {
+    totalUsers: number;
+    bannedUsers: number;
+    paidUsers: number;
+    generations: number;
+    tokens: string;
+    mediaSeconds: number;
+  }[];
+  return apiSuccess({ periodStart, ...stats });
 });
 
 /** All plans (incl. inactive) for management; the public /pricing page filters. */
