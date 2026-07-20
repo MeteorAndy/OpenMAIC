@@ -1,0 +1,13 @@
+# Secrets — never commit. Copy .env.example -> .env and fill in real values.
+.env
+.env.local
+
+# Live Postgres data (39MB+) — back up via scripts/backup-saas-db.sh instead.
+volumes/db/data/
+
+# Runtime object-storage blobs (user uploads) — back up at the storage level.
+volumes/storage/
+
+# Runtime edge-function / snippet drop-ins (empty by default).
+volumes/functions/
+volumes/snippets/
