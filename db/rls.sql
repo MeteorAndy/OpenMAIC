@@ -8,6 +8,10 @@ alter table public.plan enable row level security;
 drop policy if exists "plan read" on public.plan;
 create policy "plan read" on public.plan for select to authenticated using (true);
 
+-- admin_audit_log: RLS on, intentionally NO policy — clients (anon/authenticated)
+-- get nothing; only the backend (superuser, bypasses RLS) reads/writes it.
+alter table public.admin_audit_log enable row level security;
+
 -- per-user tables: owner-only CRUD — user_id = auth.uid().
 do $$
 declare t text;

@@ -188,3 +188,33 @@ export const usage = pgTable(
     usagePeriodIdx: uniqueIndex('usage_user_period_idx').on(t.userId, t.periodStart),
   }),
 );
+
+// ==================== 3. Ops ====================
+
+/**
+ * Admin audit trail — every operator mutation (plan provisioning, ban/unban,
+ * plan edits) with before/after detail for traceability. Append-only;
+ * written by the /api/admin/* routes via lib/server/audit.ts.
+ */
+export const adminAuditLog = pgTable(
+  'admin_audit_log',
+  {
+    id: text('id').primaryKey(),
+    /** The operator (auth.users.id) who performed the action. */
+    actorUserId: uuid('actor_user_id').notNull(),
+    /** 'subscription.set' | 'user.ban' | 'user.unban' | 'plan.update' */
+    action: text('action').notNull(),
+    /** 'user' | 'plan' */
+    targetType: text('target_type').notNull(),
+    /** userId (uuid text) or planId — kept as text so both fit. */
+    targetId: text('target_id').notNull(),
+    /** Action payload: params and/or { before, after } snapshots. */
+    detail: jsonb('detail'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (t) => ({
+    auditActorIdx: index('admin_audit_log_actor_idx').on(t.actorUserId),
+    auditTargetIdx: index('admin_audit_log_target_idx').on(t.targetType, t.targetId),
+    auditCreatedIdx: index('admin_audit_log_created_idx').on(t.createdAt),
+  }),
+);

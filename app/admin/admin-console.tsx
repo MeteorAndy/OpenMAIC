@@ -60,6 +60,40 @@ interface PlanDraft {
   isActive: boolean;
 }
 
+type AuditAction = 'subscription.set' | 'user.ban' | 'user.unban' | 'plan.update';
+
+/** Plan row snapshot embedded in plan.update audit details. */
+interface AuditPlanSnapshot {
+  name: string;
+  priceMonthlyCents: number;
+  maxGenerationsPerPeriod: number | null;
+  maxTokensPerPeriod: number | null;
+  maxMediaSecondsPerPeriod: number | null;
+  isActive: boolean;
+}
+
+interface AuditEntryBase {
+  id: string;
+  targetType: 'user' | 'plan';
+  targetId: string;
+  createdAt: string;
+  actorUserId: string;
+  actorEmail: string | null;
+  targetEmail: string | null;
+}
+
+/** detail shape is discriminated by action (null for ban/unban). */
+type AuditEntry =
+  | (AuditEntryBase & {
+      action: 'subscription.set';
+      detail: { fromPlanId: string | null; toPlanId: string } | null;
+    })
+  | (AuditEntryBase & {
+      action: 'plan.update';
+      detail: { before: AuditPlanSnapshot; after: AuditPlanSnapshot } | null;
+    })
+  | (AuditEntryBase & { action: 'user.ban' | 'user.unban'; detail: null });
+
 type OverviewResponse =
   | ({ success: true } & AdminOverview)
   | { success: false; error?: string };
@@ -74,6 +108,18 @@ type PlanSaveResponse =
   | { success: true; plan: AdminPlan }
   | { success: false; error?: string };
 type ActionResponse = { success: true } | { success: false; error?: string };
+type AuditResponse =
+  | { success: true; total: number; entries: AuditEntry[] }
+  | { success: false; error?: string };
+
+const AUDIT_PAGE_SIZE = 50;
+
+const ACTION_LABELS: Record<AuditAction, string> = {
+  'subscription.set': '开通/改期',
+  'user.ban': '封禁',
+  'user.unban': '解封',
+  'plan.update': '修改套餐',
+};
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—';
@@ -86,6 +132,14 @@ function formatMonth(iso: string): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/** createdAt arrives as "2026-07-20 03:09:58.645909" — render local time to the minute. */
+function formatDateTimeMinute(raw: string): string {
+  const d = new Date(raw.replace(' ', 'T'));
+  if (Number.isNaN(d.getTime())) return raw;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 function isBanned(u: AdminUser): boolean {
@@ -123,6 +177,53 @@ function parseQuota(s: string): number | null | undefined {
   return n;
 }
 
+function formatQuotaValue(v: number | null): string {
+  return v === null ? '不限' : v.toLocaleString();
+}
+
+/** Field-by-field diff of a plan.update detail; only changed fields, joined by '、'. */
+function diffPlanSnapshot(before: AuditPlanSnapshot, after: AuditPlanSnapshot): string {
+  const parts: string[] = [];
+  if (before.name !== after.name) parts.push(`名称: ${before.name} → ${after.name}`);
+  if (before.priceMonthlyCents !== after.priceMonthlyCents) {
+    parts.push(`价格: ¥${before.priceMonthlyCents / 100} → ¥${after.priceMonthlyCents / 100}`);
+  }
+  if (before.maxGenerationsPerPeriod !== after.maxGenerationsPerPeriod) {
+    parts.push(
+      `月生成次数: ${formatQuotaValue(before.maxGenerationsPerPeriod)} → ${formatQuotaValue(after.maxGenerationsPerPeriod)}`,
+    );
+  }
+  if (before.maxTokensPerPeriod !== after.maxTokensPerPeriod) {
+    parts.push(
+      `月 Tokens: ${formatQuotaValue(before.maxTokensPerPeriod)} → ${formatQuotaValue(after.maxTokensPerPeriod)}`,
+    );
+  }
+  if (before.maxMediaSecondsPerPeriod !== after.maxMediaSecondsPerPeriod) {
+    parts.push(
+      `媒体秒: ${formatQuotaValue(before.maxMediaSecondsPerPeriod)} → ${formatQuotaValue(after.maxMediaSecondsPerPeriod)}`,
+    );
+  }
+  if (before.isActive !== after.isActive) {
+    parts.push(`上架: ${before.isActive ? '是' : '否'} → ${after.isActive ? '是' : '否'}`);
+  }
+  return parts.length > 0 ? parts.join('、') : '无字段变化';
+}
+
+function renderAuditDetail(entry: AuditEntry): string {
+  switch (entry.action) {
+    case 'subscription.set': {
+      const d = entry.detail;
+      return d ? `${d.fromPlanId ?? '无'} → ${d.toPlanId}` : '—';
+    }
+    case 'plan.update': {
+      const d = entry.detail;
+      return d ? diffPlanSnapshot(d.before, d.after) : '—';
+    }
+    default:
+      return '—';
+  }
+}
+
 export function AdminConsole() {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
   const [plans, setPlans] = useState<AdminPlan[]>([]);
@@ -144,6 +245,30 @@ export function AdminConsole() {
   const [planMessages, setPlanMessages] = useState<Record<string, { ok: boolean; text: string }>>(
     {},
   );
+  const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
+  const [auditTotal, setAuditTotal] = useState(0);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [auditError, setAuditError] = useState<string | null>(null);
+
+  // Fetches one page of the audit log. Errors stay section-local (never thrown),
+  // so this is safe to include in load()'s Promise.all.
+  const fetchAudit = useCallback(async (offset: number, append: boolean) => {
+    setAuditLoading(true);
+    setAuditError(null);
+    try {
+      const res = await fetch(`/api/admin/audit-log?limit=${AUDIT_PAGE_SIZE}&offset=${offset}`);
+      const data = (await res.json().catch(() => null)) as AuditResponse | null;
+      if (!res.ok || !data?.success) {
+        throw new Error(data && !data.success && data.error ? data.error : '操作日志加载失败');
+      }
+      setAuditTotal(data.total);
+      setAuditEntries((prev) => (append ? [...prev, ...data.entries] : data.entries));
+    } catch (err) {
+      setAuditError(err instanceof Error ? err.message : '操作日志加载失败');
+    } finally {
+      setAuditLoading(false);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -153,6 +278,8 @@ export function AdminConsole() {
         fetch('/api/admin/overview'),
         fetch('/api/admin/plans'),
         fetch('/api/admin/users'),
+        // Resets the log to page 1 on every load; never rejects on its own.
+        fetchAudit(0, false),
       ]);
       const overviewJson = (await overviewRes.json().catch(() => null)) as OverviewResponse | null;
       const plansJson = (await plansRes.json().catch(() => null)) as PlansResponse | null;
@@ -188,7 +315,7 @@ export function AdminConsole() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [fetchAudit]);
 
   useEffect(() => {
     void load();
@@ -342,6 +469,10 @@ export function AdminConsole() {
     } finally {
       setPlanSaving((prev) => ({ ...prev, [p.id]: false }));
     }
+  }
+
+  function onLoadMoreAudit() {
+    void fetchAudit(auditEntries.length, true);
   }
 
   if (loading) return <p className="text-sm text-muted-foreground">加载中…</p>;
@@ -625,6 +756,70 @@ export function AdminConsole() {
         </div>
         {formMessage && <p className="text-sm text-muted-foreground">{formMessage}</p>}
       </form>
+
+      <div className="rounded-xl border bg-card p-6 shadow-sm">
+        <h2 className="mb-4 text-lg font-semibold">操作日志</h2>
+        {auditError && <p className="mb-3 text-sm text-destructive">{auditError}</p>}
+        {auditEntries.length === 0 && !auditError && (
+          <p className="text-sm text-muted-foreground">
+            {auditLoading ? '加载中…' : '暂无操作日志'}
+          </p>
+        )}
+        {auditEntries.length > 0 && (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b text-left text-muted-foreground">
+                    <th className="py-2 pr-4 font-medium">时间</th>
+                    <th className="py-2 pr-4 font-medium">操作者</th>
+                    <th className="py-2 pr-4 font-medium">动作</th>
+                    <th className="py-2 pr-4 font-medium">目标</th>
+                    <th className="py-2 font-medium">详情</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {auditEntries.map((e) => (
+                    <tr key={e.id} className="border-b last:border-0">
+                      <td className="whitespace-nowrap py-2 pr-4">
+                        {formatDateTimeMinute(e.createdAt)}
+                      </td>
+                      <td className="py-2 pr-4">
+                        {e.actorEmail ?? (
+                          <span className="font-mono text-xs" title={e.actorUserId}>
+                            {e.actorUserId.slice(0, 8)}…
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-2 pr-4">{ACTION_LABELS[e.action] ?? e.action}</td>
+                      <td className="py-2 pr-4">
+                        {e.targetType === 'plan'
+                          ? `套餐 ${e.targetId}`
+                          : (e.targetEmail ?? e.targetId)}
+                      </td>
+                      <td className="py-2 text-muted-foreground">{renderAuditDetail(e)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="mt-4 flex items-center gap-3">
+              {auditEntries.length < auditTotal && (
+                <button
+                  onClick={onLoadMoreAudit}
+                  disabled={auditLoading}
+                  className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+                >
+                  {auditLoading ? '加载中…' : '加载更多'}
+                </button>
+              )}
+              <p className="text-xs text-muted-foreground">
+                已加载 {auditEntries.length} / 共 {auditTotal}
+              </p>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }

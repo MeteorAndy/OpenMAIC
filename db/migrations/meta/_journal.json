@@ -8,6 +8,13 @@
       "when": 1784251194329,
       "tag": "0000_magical_surge",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1784516491821,
+      "tag": "0001_known_amazoness",
+      "breakpoints": true
     }
   ]
 }

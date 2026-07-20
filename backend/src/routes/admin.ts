@@ -8,7 +8,7 @@
  */
 import { Hono, type Context } from 'hono';
 import { db } from '@/db/client';
-import { plan, usage } from '@/db/schema';
+import { plan, subscription, usage } from '@/db/schema';
 import { desc, eq, sql } from 'drizzle-orm';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { setUserPlan } from '@/lib/server/billing';
@@ -16,6 +16,7 @@ import { periodStartNow } from '@/lib/server/plans';
 import { isAdmin } from '@/lib/server/admin';
 import { getUserEmail, listAdminUsers, setUserBanned } from '@/lib/server/admin-users';
 import { getEmailProvider } from '@/lib/server/email';
+import { recordAudit } from '@/lib/server/audit';
 import { createLogger } from '@/lib/logger';
 import { authMiddleware, type AuthVars } from '../server/auth';
 
@@ -104,9 +105,18 @@ adminRoute.put('/plans/:id', async (c) => {
     return apiError('INVALID_REQUEST', 400, 'nothing to update');
   }
 
+  const before = await db.select().from(plan).where(eq(plan.id, planId)).limit(1);
+  if (before.length === 0) return apiError('INVALID_REQUEST', 404, `plan '${planId}' not found`);
+
   const updated = await db.update(plan).set(patch).where(eq(plan.id, planId)).returning();
-  if (updated.length === 0) return apiError('INVALID_REQUEST', 404, `plan '${planId}' not found`);
   log.info(`plan updated: ${planId} ${JSON.stringify(patch)} by admin=${c.get('userId')}`);
+  await recordAudit({
+    actorUserId: c.get('userId'),
+    action: 'plan.update',
+    targetType: 'plan',
+    targetId: planId,
+    detail: { before: before[0], after: updated[0] },
+  });
   return apiSuccess({ plan: updated[0] });
 });
 
@@ -134,11 +144,23 @@ adminRoute.post('/subscription', async (c) => {
   if (!body.userId || !body.planId) {
     return apiError('MISSING_REQUIRED_FIELD', 400, 'userId and planId are required');
   }
+  const before = await db
+    .select()
+    .from(subscription)
+    .where(eq(subscription.userId, body.userId))
+    .limit(1);
   try {
     await setUserPlan(body.userId, body.planId);
   } catch (err) {
     return apiError('INVALID_REQUEST', 400, err instanceof Error ? err.message : 'Failed to set plan');
   }
+  await recordAudit({
+    actorUserId: c.get('userId'),
+    action: 'subscription.set',
+    targetType: 'user',
+    targetId: body.userId,
+    detail: { fromPlanId: before[0]?.planId ?? null, toPlanId: body.planId },
+  });
   // Plan-activated notice — fire-and-forget: a mail outage must not fail provisioning.
   void (async () => {
     try {
@@ -169,5 +191,42 @@ async function setBanned(c: Context<AuthVars>, banned: boolean) {
     return apiError('INTERNAL_ERROR', 502, err instanceof Error ? err.message : 'GoTrue admin call failed');
   }
   log.info(`user ${banned ? 'banned' : 'unbanned'}: ${userId} by admin=${c.get('userId')}`);
+  await recordAudit({
+    actorUserId: c.get('userId'),
+    action: banned ? 'user.ban' : 'user.unban',
+    targetType: 'user',
+    targetId: userId,
+  });
   return apiSuccess({ userId, banned });
 }
+
+/**
+ * Audit trail, newest first. ?limit (default 50, max 200) + ?offset.
+ * Actor/target emails are joined from auth.users (target email only when the
+ * target is a user; plan targets show the plan id).
+ */
+adminRoute.get('/audit-log', async (c) => {
+  const limit = Math.min(Math.max(Number(c.req.query('limit')) || 50, 1), 200);
+  const offset = Math.max(Number(c.req.query('offset')) || 0, 0);
+  const rows = (await db.execute(sql`
+    select
+      l.id,
+      l.action,
+      l.target_type        as "targetType",
+      l.target_id          as "targetId",
+      l.detail,
+      l.created_at         as "createdAt",
+      l.actor_user_id      as "actorUserId",
+      a.email::text        as "actorEmail",
+      t.email::text        as "targetEmail"
+    from public.admin_audit_log l
+    left join auth.users a on a.id = l.actor_user_id
+    left join auth.users t on l.target_type = 'user' and t.id::text = l.target_id
+    order by l.created_at desc
+    limit ${limit} offset ${offset}
+  `)) as unknown as Record<string, unknown>[];
+  const [countRow] = (await db.execute(
+    sql`select count(*)::int as total from public.admin_audit_log`,
+  )) as unknown as { total: number }[];
+  return apiSuccess({ total: countRow.total, entries: rows });
+});
