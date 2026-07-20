@@ -1,5 +1,5 @@
 /**
- * GET /api/health — public capability probe. Mirrors app/api/health/route.ts.
+ * GET /api/health — public capability probe. Mirrors app/_api_archive/health/route.ts.
  * Reuses lib/server/api-response (apiSuccess envelope) + provider-config unchanged.
  */
 import { Hono } from 'hono';

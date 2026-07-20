@@ -1,5 +1,5 @@
 /**
- * POST /api/generate/video — mirrors app/api/generate/video/route.ts.
+ * POST /api/generate/video — mirrors app/_api_archive/generate/video/route.ts.
  * HTTP layer only; generateVideo + provider-config reused unchanged.
  */
 import { Hono } from 'hono';

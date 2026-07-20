@@ -1,6 +1,6 @@
 /**
  * GET /api/classroom-media/:classroomId/:path+ — mirrors
- * app/api/classroom-media/[classroomId]/[...path]/route.ts.
+ * app/_api_archive/classroom-media/[classroomId]/[...path]/route.ts.
  * Streams a media file from disk. Public (CDN-like). Multi-segment path captured
  * via Hono regexp param :path{.+} and split on '/'.
  */

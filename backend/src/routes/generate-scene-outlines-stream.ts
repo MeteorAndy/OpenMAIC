@@ -1,5 +1,5 @@
 /**
- * POST /api/generate/scene-outlines-stream — mirrors app/api/generate/scene-outlines-stream/route.ts.
+ * POST /api/generate/scene-outlines-stream — mirrors app/_api_archive/generate/scene-outlines-stream/route.ts.
  * SSE: ReadableStream + heartbeat; abort via c.req.raw.signal. All streaming
  * parser helpers are brought along verbatim; only the HTTP layer is adapted.
  */

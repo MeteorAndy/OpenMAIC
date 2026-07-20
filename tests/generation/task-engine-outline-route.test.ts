@@ -13,6 +13,11 @@ vi.mock('@/lib/server/resolve-model', () => ({
   resolveModelFromRequest: resolveModelFromRequestMock,
 }));
 
+vi.mock('@/lib/server/quota', () => ({
+  requireUserWithQuota: vi.fn(async () => 'test-user'),
+  recordGeneration: vi.fn(),
+}));
+
 async function readStreamBody(response: Response) {
   const reader = response.body?.getReader();
   expect(reader).toBeDefined();
@@ -182,7 +187,7 @@ describe('task-engine outline route', () => {
       })(),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const { POST } = await import('@/app/_api_archive/generate/scene-outlines-stream/route');
     const response = await POST(
       mockRequest({
         requirement: 'NEV-A12 新能源车动力电池包更换前安全确认',
@@ -298,7 +303,7 @@ describe('task-engine outline route', () => {
       })(),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const { POST } = await import('@/app/_api_archive/generate/scene-outlines-stream/route');
     const response = await POST(
       mockRequest({
         requirement: 'Teach motion with interaction',
@@ -357,7 +362,7 @@ describe('task-engine outline route', () => {
       })(),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const { POST } = await import('@/app/_api_archive/generate/scene-outlines-stream/route');
     const response = await POST(
       mockRequest({
         requirement: 'Teach a process interactively',
@@ -422,7 +427,7 @@ describe('task-engine outline route', () => {
       })(),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const { POST } = await import('@/app/_api_archive/generate/scene-outlines-stream/route');
     const response = await POST(
       mockRequest({
         requirement: '生成一个情景模拟 PBL，练习安慰压力很大的朋友',
@@ -480,7 +485,7 @@ describe('task-engine outline route', () => {
       })(),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const { POST } = await import('@/app/_api_archive/generate/scene-outlines-stream/route');
     const response = await POST(
       mockRequest({
         requirement: 'Teach a topic',
@@ -529,7 +534,7 @@ describe('task-engine outline route', () => {
       })(),
     });
 
-    const { POST } = await import('@/app/api/generate/scene-outlines-stream/route');
+    const { POST } = await import('@/app/_api_archive/generate/scene-outlines-stream/route');
     const response = await POST(
       mockRequest({
         requirement: 'Explain the Pythagorean theorem',

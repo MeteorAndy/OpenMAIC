@@ -1,5 +1,5 @@
 /**
- * POST /api/generate/scene-actions — mirrors app/api/generate/scene-actions/route.ts.
+ * POST /api/generate/scene-actions — mirrors app/_api_archive/generate/scene-actions/route.ts.
  * HTTP layer only; generation-pipeline + llm + resolve-model reused unchanged.
  */
 import { Hono } from 'hono';

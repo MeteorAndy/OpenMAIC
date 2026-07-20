@@ -1,5 +1,5 @@
 /**
- * GET /api/generate-classroom/:jobId — mirrors app/api/generate-classroom/[jobId]/route.ts.
+ * GET /api/generate-classroom/:jobId — mirrors app/_api_archive/generate-classroom/[jobId]/route.ts.
  * Public (mirrors Next route, which had no session gate). jobId via c.req.param.
  */
 import { Hono } from 'hono';

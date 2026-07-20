@@ -1,5 +1,5 @@
 /**
- * POST /api/azure-voices — mirrors app/api/azure-voices/route.ts. Public.
+ * POST /api/azure-voices — mirrors app/_api_archive/azure-voices/route.ts. Public.
  */
 import { Hono } from 'hono';
 import { createLogger } from '@/lib/logger';

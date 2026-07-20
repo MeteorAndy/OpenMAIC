@@ -1,5 +1,5 @@
 /**
- * POST /api/pbl/v2/simulator — mirrors app/api/pbl/v2/simulator/route.ts. SSE.
+ * POST /api/pbl/v2/simulator — mirrors app/_api_archive/pbl/v2/simulator/route.ts. SSE.
  */
 import { Hono } from 'hono';
 import { createLogger } from '@/lib/logger';

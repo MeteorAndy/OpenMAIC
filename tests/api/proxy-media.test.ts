@@ -13,7 +13,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 async function postProxy(body: Record<string, unknown>) {
-  const { POST } = await import('@/app/api/proxy-media/route');
+  const { POST } = await import('@/app/_api_archive/proxy-media/route');
   const req = new Request('http://localhost/api/proxy-media', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

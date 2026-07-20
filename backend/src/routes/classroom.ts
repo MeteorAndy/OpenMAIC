@@ -1,5 +1,5 @@
 /**
- * /api/classroom — mirrors app/api/classroom/route.ts. POST persists, GET reads by ?id.
+ * /api/classroom — mirrors app/_api_archive/classroom/route.ts. POST persists, GET reads by ?id.
  * Public (classrooms are shared by URL). nextUrl.searchParams -> c.req.query.
  */
 import { Hono } from 'hono';

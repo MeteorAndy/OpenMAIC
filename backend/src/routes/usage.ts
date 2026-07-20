@@ -1,5 +1,5 @@
 /**
- * GET /api/usage — mirrors app/api/usage/route.ts. Public (deployment-wide usage stats).
+ * GET /api/usage — mirrors app/_api_archive/usage/route.ts. Public (deployment-wide usage stats).
  * nextUrl.searchParams -> c.req.query.
  */
 import { Hono } from 'hono';

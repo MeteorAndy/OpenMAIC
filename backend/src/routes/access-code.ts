@@ -1,5 +1,5 @@
 /**
- * /api/access-code/{status,verify} — mirror app/api/access-code/{status,verify}/route.ts.
+ * /api/access-code/{status,verify} — mirror app/_api_archive/access-code/{status,verify}/route.ts.
  *
  * NON-MECHANISTIC: the Next routes use next/headers cookies() to read/set the
  * `openmaic_access` cookie. The compiled backend is Bearer-auth + credentials-free

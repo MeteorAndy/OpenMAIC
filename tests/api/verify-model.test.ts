@@ -24,7 +24,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 async function postVerifyModel(body: Record<string, unknown>) {
-  const { POST } = await import('@/app/api/verify-model/route');
+  const { POST } = await import('@/app/_api_archive/verify-model/route');
   const request = new Request('http://localhost/api/verify-model', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

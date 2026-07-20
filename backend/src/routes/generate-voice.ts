@@ -1,5 +1,5 @@
 /**
- * POST /api/generate/voice — mirrors app/api/generate/voice/route.ts.
+ * POST /api/generate/voice — mirrors app/_api_archive/generate/voice/route.ts.
  * HTTP layer only; voice-registration + provider-config reused unchanged.
  */
 import { Hono } from 'hono';

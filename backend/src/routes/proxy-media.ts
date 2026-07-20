@@ -1,5 +1,5 @@
 /**
- * POST /api/proxy-media — mirrors app/api/proxy-media/route.ts. Public.
+ * POST /api/proxy-media — mirrors app/_api_archive/proxy-media/route.ts. Public.
  * Returns the upstream blob as a Response (Hono passes it through unchanged).
  */
 import { Hono } from 'hono';

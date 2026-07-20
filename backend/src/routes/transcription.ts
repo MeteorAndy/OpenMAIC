@@ -1,5 +1,5 @@
 /**
- * POST /api/transcription — mirrors app/api/transcription/route.ts.
+ * POST /api/transcription — mirrors app/_api_archive/transcription/route.ts.
  * multipart/form-data via c.req.raw.formData(); HTTP layer only.
  */
 import { Hono } from 'hono';

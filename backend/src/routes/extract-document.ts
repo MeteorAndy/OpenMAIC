@@ -1,5 +1,5 @@
 /**
- * POST /api/extract-document — mirrors app/api/extract-document/route.ts. Public.
+ * POST /api/extract-document — mirrors app/_api_archive/extract-document/route.ts. Public.
  * multipart/form-data via c.req.raw.formData(). Local helpers brought along verbatim.
  */
 import { Hono } from 'hono';

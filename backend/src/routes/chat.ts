@@ -1,5 +1,5 @@
 /**
- * POST /api/chat — stateless SSE generation. Mirrors app/api/chat/route.ts.
+ * POST /api/chat — stateless SSE generation. Mirrors app/_api_archive/chat/route.ts.
  *
  * Only the HTTP layer is adapted (Hono Context in place of NextRequest);
  * everything beneath — requireUserWithQuota (auth+rate-limit+quota gate),

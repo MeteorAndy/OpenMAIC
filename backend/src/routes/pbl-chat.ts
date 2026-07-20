@@ -1,5 +1,5 @@
 /**
- * POST /api/pbl/chat — mirrors app/api/pbl/chat/route.ts. HTTP layer only.
+ * POST /api/pbl/chat — mirrors app/_api_archive/pbl/chat/route.ts. HTTP layer only.
  */
 import { Hono } from 'hono';
 import { callLLM } from '@/lib/ai/llm';

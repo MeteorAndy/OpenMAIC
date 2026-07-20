@@ -1,5 +1,5 @@
 /**
- * POST /api/assets/upload — mirrors app/api/assets/upload/route.ts.
+ * POST /api/assets/upload — mirrors app/_api_archive/assets/upload/route.ts.
  * multipart/form-data; session via getCurrentSession (ALS set by authMiddleware).
  */
 import { Hono } from 'hono';

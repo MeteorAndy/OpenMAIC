@@ -2,7 +2,7 @@
  * OpenMAIC compiled backend — Hono on Bun.
  *
  * All Next.js API routes are ported here. Each sub-app under backend/src/routes/
- * mirrors an app/api/<path>/route.ts handler, reusing lib/* and db/* verbatim;
+ * mirrors an app/_api_archive/<path>/route.ts handler, reusing lib/* and db/* verbatim;
  * only the HTTP layer is adapted (Hono Context in place of NextRequest). Hono
  * returns Web Response instances unchanged, so apiSuccess/apiError and the SSE
  * Response(readable) pass straight through.

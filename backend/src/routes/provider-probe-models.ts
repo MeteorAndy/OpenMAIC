@@ -1,5 +1,5 @@
 /**
- * POST /api/provider/probe-models — mirrors app/api/provider/probe-models/route.ts. Public.
+ * POST /api/provider/probe-models — mirrors app/_api_archive/provider/probe-models/route.ts. Public.
  */
 import { Hono } from 'hono';
 import { createLogger } from '@/lib/logger';

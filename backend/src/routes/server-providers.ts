@@ -1,5 +1,5 @@
 /**
- * GET /api/server-providers — mirrors app/api/server-providers/route.ts. Public.
+ * GET /api/server-providers — mirrors app/_api_archive/server-providers/route.ts. Public.
  */
 import { Hono } from 'hono';
 import {

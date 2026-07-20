@@ -1,5 +1,5 @@
 /**
- * POST /api/generate/image — mirrors app/api/generate/image/route.ts.
+ * POST /api/generate/image — mirrors app/_api_archive/generate/image/route.ts.
  * Only the HTTP layer is adapted (Hono Context in place of NextRequest);
  * generateImage + provider-config + usage/quota logic is reused unchanged.
  */

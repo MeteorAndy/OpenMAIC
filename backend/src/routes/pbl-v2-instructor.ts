@@ -1,5 +1,5 @@
 /**
- * POST /api/pbl/v2/instructor — mirrors app/api/pbl/v2/instructor/route.ts.
+ * POST /api/pbl/v2/instructor — mirrors app/_api_archive/pbl/v2/instructor/route.ts.
  * SSE via createSSEResponse; locale sync via applyRequestLocaleToProject(c.req.raw).
  */
 import { Hono } from 'hono';

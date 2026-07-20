@@ -15,7 +15,7 @@ import { buildAgent, buildSystemPrompt } from '@/lib/agent/runtime/build-agent';
 import { buildToolset } from '@/lib/agent/tools/registry';
 import { callLLM } from '@/lib/ai/llm';
 import { createLogger } from '@/lib/logger';
-import type { SceneContext } from '@/lib/agent/tools/regenerate-scene-actions';
+import type { SceneContextMap } from '@/lib/agent/edit-types';
 import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
 
 const log = createLogger('MAIC Agent');
@@ -26,12 +26,8 @@ const log = createLogger('MAIC Agent');
 // slow models / media-heavy slides aren't terminated mid-stream.
 export const maxDuration = 300;
 
-/**
- * Scene/stage context map sent by the client.
- * Keyed by scene id; the client reads `useStageStore` to build this so the
- * server never has to access a (non-existent) server-side scene store.
- */
-export type SceneContextMap = Record<string, SceneContext>;
+// back-compat: keep SceneContextMap re-exportable from this module
+export type { SceneContextMap };
 
 interface AgentEditBody {
   message: string;

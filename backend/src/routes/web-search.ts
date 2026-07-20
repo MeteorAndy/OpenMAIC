@@ -1,5 +1,5 @@
 /**
- * POST /api/web-search — mirrors app/api/web-search/route.ts. HTTP layer only.
+ * POST /api/web-search — mirrors app/_api_archive/web-search/route.ts. HTTP layer only.
  */
 import { Hono } from 'hono';
 import { callLLM } from '@/lib/ai/llm';

@@ -1,5 +1,5 @@
 /**
- * POST /api/pbl/v2/task/update — mirrors app/api/pbl/v2/task/update/route.ts.
+ * POST /api/pbl/v2/task/update — mirrors app/_api_archive/pbl/v2/task/update/route.ts.
  * Pure state mutation; no LLM. Authed (quota gate kept faithful to Next route).
  */
 import { Hono } from 'hono';

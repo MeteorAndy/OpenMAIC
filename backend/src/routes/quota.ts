@@ -1,6 +1,6 @@
 /**
  * GET /api/quota — the signed-in user's plan + current-period usage vs caps.
- * Mirrors app/api/quota/route.ts. The only change vs Next: getCurrentSession
+ * Mirrors app/_api_archive/quota/route.ts. The only change vs Next: getCurrentSession
  * is the backend shim (Bearer -> userId via AsyncLocalStorage), set by the
  * authMiddleware mounted on this sub-app.
  */

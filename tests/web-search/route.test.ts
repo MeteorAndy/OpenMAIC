@@ -20,6 +20,11 @@ vi.mock('@/lib/server/resolve-model', () => ({
   resolveModelFromRequest: mocks.resolveModelFromRequest,
 }));
 
+vi.mock('@/lib/server/quota', () => ({
+  requireUserWithQuota: vi.fn(async () => 'test-user'),
+  recordGeneration: vi.fn(),
+}));
+
 vi.mock('@/lib/ai/llm', () => ({
   callLLM: vi.fn(),
 }));
@@ -34,7 +39,7 @@ vi.mock('@/lib/logger', () => ({
 }));
 
 async function postWebSearch(body: Record<string, unknown>) {
-  const { POST } = await import('@/app/api/web-search/route');
+  const { POST } = await import('@/app/_api_archive/web-search/route');
   const request = new Request('http://localhost/api/web-search', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

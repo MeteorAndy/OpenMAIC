@@ -20,6 +20,11 @@ vi.mock('@/lib/server/resolve-model', () => ({
   resolveModelFromRequest: mocks.resolveModelFromRequest,
 }));
 
+vi.mock('@/lib/server/quota', () => ({
+  requireUserWithQuota: vi.fn(async () => 'test-user'),
+  recordGeneration: vi.fn(),
+}));
+
 vi.mock('@/lib/config/feature-flags', () => ({
   resolveVocationalActive: mocks.resolveVocationalActive,
 }));
@@ -73,7 +78,7 @@ describe('scene API retry boundary', () => {
       return { elements: [], remark: 'ok' };
     });
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const { POST } = await import('@/app/_api_archive/generate/scene-content/route');
     const response = await POST(mockRequest());
     const body = await response.json();
 
@@ -96,7 +101,7 @@ describe('scene API retry boundary', () => {
       actions: [],
     });
 
-    const { POST } = await import('@/app/api/generate/scene-actions/route');
+    const { POST } = await import('@/app/_api_archive/generate/scene-actions/route');
     const response = await POST(
       mockRequest({
         content: { elements: [], remark: 'ok' },
@@ -117,7 +122,7 @@ describe('scene API retry boundary', () => {
     });
     mocks.callLLM.mockRejectedValueOnce(unauthorized);
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const { POST } = await import('@/app/_api_archive/generate/scene-content/route');
     const response = await POST(mockRequest());
     const body = await response.json();
 
@@ -138,7 +143,7 @@ describe('scene API retry boundary', () => {
     });
     mocks.callLLM.mockRejectedValueOnce(unavailable);
 
-    const { POST } = await import('@/app/api/generate/scene-content/route');
+    const { POST } = await import('@/app/_api_archive/generate/scene-content/route');
     const response = await POST(mockRequest());
     const body = await response.json();
 
@@ -159,7 +164,7 @@ describe('scene API retry boundary', () => {
     });
     mocks.callLLM.mockRejectedValueOnce(unauthorized);
 
-    const { POST } = await import('@/app/api/generate/scene-actions/route');
+    const { POST } = await import('@/app/_api_archive/generate/scene-actions/route');
     const response = await POST(mockRequest({ content: { elements: [], remark: 'ok' } }));
     const body = await response.json();
 
@@ -180,7 +185,7 @@ describe('scene API retry boundary', () => {
     });
     mocks.callLLM.mockRejectedValueOnce(unavailable);
 
-    const { POST } = await import('@/app/api/generate/scene-actions/route');
+    const { POST } = await import('@/app/_api_archive/generate/scene-actions/route');
     const response = await POST(mockRequest({ content: { elements: [], remark: 'ok' } }));
     const body = await response.json();
 
@@ -202,5 +207,5 @@ function mockRequest(extraBody: Record<string, unknown> = {}) {
       stageInfo: { name: 'Retry Course' },
       ...extraBody,
     }),
-  } as unknown as Parameters<typeof import('@/app/api/generate/scene-content/route').POST>[0];
+  } as unknown as Parameters<typeof import('@/app/_api_archive/generate/scene-content/route').POST>[0];
 }

@@ -1,5 +1,5 @@
 /**
- * POST /api/verify-video-provider — mirrors app/api/verify-video-provider/route.ts. Public.
+ * POST /api/verify-video-provider — mirrors app/_api_archive/verify-video-provider/route.ts. Public.
  */
 import { Hono } from 'hono';
 import { testVideoConnectivity } from '@/lib/media/video-providers';

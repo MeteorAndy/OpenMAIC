@@ -1,5 +1,5 @@
 /**
- * POST /api/verify-pdf-provider — mirrors app/api/verify-pdf-provider/route.ts. Public.
+ * POST /api/verify-pdf-provider — mirrors app/_api_archive/verify-pdf-provider/route.ts. Public.
  */
 import { Hono } from 'hono';
 import { createLogger } from '@/lib/logger';

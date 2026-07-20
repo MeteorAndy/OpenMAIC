@@ -1,5 +1,5 @@
 /**
- * POST /api/pbl/v2/evaluate — mirrors app/api/pbl/v2/evaluate/route.ts.
+ * POST /api/pbl/v2/evaluate — mirrors app/_api_archive/pbl/v2/evaluate/route.ts.
  * SSE via createSSEResponse; signal from c.req.raw.signal.
  */
 import { Hono } from 'hono';

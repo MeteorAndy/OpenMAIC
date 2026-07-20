@@ -1,5 +1,5 @@
 /**
- * GET /api/comfyui-workflows — mirrors app/api/comfyui-workflows/route.ts. Public.
+ * GET /api/comfyui-workflows — mirrors app/_api_archive/comfyui-workflows/route.ts. Public.
  * Note: returns { workflows: [...] } directly (not the success envelope), matching the Next route.
  */
 import { Hono } from 'hono';

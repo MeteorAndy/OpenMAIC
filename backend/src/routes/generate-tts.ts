@@ -1,5 +1,5 @@
 /**
- * POST /api/generate/tts — mirrors app/api/generate/tts/route.ts.
+ * POST /api/generate/tts — mirrors app/_api_archive/generate/tts/route.ts.
  * HTTP layer only; generateTTS + provider-config reused unchanged.
  */
 import { Hono } from 'hono';

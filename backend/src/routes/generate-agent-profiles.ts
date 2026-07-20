@@ -1,5 +1,5 @@
 /**
- * POST /api/generate/agent-profiles — mirrors app/api/generate/agent-profiles/route.ts.
+ * POST /api/generate/agent-profiles — mirrors app/_api_archive/generate/agent-profiles/route.ts.
  * HTTP layer only; llm + resolve-model + voice-design reused unchanged.
  */
 import { Hono } from 'hono';

@@ -14,6 +14,10 @@ const mocks = vi.hoisted(() => ({
 vi.mock('@/lib/server/resolve-model', () => ({
   resolveModelFromRequest: mocks.resolveModelFromRequest,
 }));
+vi.mock('@/lib/server/quota', () => ({
+  requireUserWithQuota: vi.fn(async () => 'test-user'),
+  recordGeneration: vi.fn(),
+}));
 vi.mock('@/lib/pbl/v2/api/sse', () => ({
   createSSEResponse: vi.fn(() => new Response('ok')),
 }));
@@ -57,7 +61,7 @@ describe('PBL v2 runtime routes forward MODEL_ROUTES stages', () => {
   });
 
   it('instructor route forwards its runtime stage', async () => {
-    const { POST } = await import('@/app/api/pbl/v2/instructor/route');
+    const { POST } = await import('@/app/_api_archive/pbl/v2/instructor/route');
     await POST(makeRequest({ project: { id: 'p' }, userMessage: 'hi' }));
     expect(mocks.resolveModelFromRequest).toHaveBeenCalledWith(
       expect.anything(),
@@ -67,7 +71,7 @@ describe('PBL v2 runtime routes forward MODEL_ROUTES stages', () => {
   });
 
   it('evaluate route forwards its runtime stage', async () => {
-    const { POST } = await import('@/app/api/pbl/v2/evaluate/route');
+    const { POST } = await import('@/app/_api_archive/pbl/v2/evaluate/route');
     await POST(makeRequest({ project: { id: 'p' }, kind: 'final' }));
     expect(mocks.resolveModelFromRequest).toHaveBeenCalledWith(
       expect.anything(),
@@ -77,7 +81,7 @@ describe('PBL v2 runtime routes forward MODEL_ROUTES stages', () => {
   });
 
   it('open-task route forwards its runtime stage', async () => {
-    const { POST } = await import('@/app/api/pbl/v2/open-task/route');
+    const { POST } = await import('@/app/_api_archive/pbl/v2/open-task/route');
     await POST(makeRequest({ project: { id: 'p' }, phase: 'greeting' }));
     expect(mocks.resolveModelFromRequest).toHaveBeenCalledWith(
       expect.anything(),
@@ -87,7 +91,7 @@ describe('PBL v2 runtime routes forward MODEL_ROUTES stages', () => {
   });
 
   it('simulator route forwards its runtime stage', async () => {
-    const { POST } = await import('@/app/api/pbl/v2/simulator/route');
+    const { POST } = await import('@/app/_api_archive/pbl/v2/simulator/route');
     await POST(makeRequest({ project: { id: 'p' }, userMessage: 'hi' }));
     expect(mocks.resolveModelFromRequest).toHaveBeenCalledWith(
       expect.anything(),

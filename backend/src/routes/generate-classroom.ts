@@ -1,5 +1,5 @@
 /**
- * POST /api/generate-classroom — mirrors app/api/generate-classroom/route.ts.
+ * POST /api/generate-classroom — mirrors app/_api_archive/generate-classroom/route.ts.
  * buildRequestOrigin needs req.nextUrl; bridged via withNextUrl(c.req.raw, c.req.url).
  */
 import { Hono } from 'hono';

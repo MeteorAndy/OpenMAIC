@@ -1,5 +1,5 @@
 /**
- * POST /api/quiz-grade — mirrors app/api/quiz-grade/route.ts. HTTP layer only.
+ * POST /api/quiz-grade — mirrors app/_api_archive/quiz-grade/route.ts. HTTP layer only.
  */
 import { Hono } from 'hono';
 import { callLLM } from '@/lib/ai/llm';

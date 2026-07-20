@@ -1,5 +1,5 @@
 /**
- * POST /api/parse-pdf — mirrors app/api/parse-pdf/route.ts. Public.
+ * POST /api/parse-pdf — mirrors app/_api_archive/parse-pdf/route.ts. Public.
  * multipart/form-data via c.req.raw.formData().
  */
 import { Hono } from 'hono';

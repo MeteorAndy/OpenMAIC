@@ -1,5 +1,5 @@
 /**
- * POST /api/agent/edit — mirrors app/api/agent/edit/route.ts.
+ * POST /api/agent/edit — mirrors app/_api_archive/agent/edit/route.ts.
  * SSE transport for the pi Agent; inline ReadableStream + subscribe. The stream's
  * cancel() (fired on client disconnect via Hono's raw Request) aborts the agent.
  */

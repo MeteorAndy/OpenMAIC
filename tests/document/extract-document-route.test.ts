@@ -33,7 +33,7 @@ async function postExtractDocument(input: {
   apiKey?: string;
   baseUrl?: string;
 }) {
-  const { POST } = await import('@/app/api/extract-document/route');
+  const { POST } = await import('@/app/_api_archive/extract-document/route');
   const formData = new FormData();
   formData.append('file', input.file);
   if (input.providerId) formData.append('providerId', input.providerId);

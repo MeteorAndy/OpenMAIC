@@ -1,5 +1,5 @@
 /**
- * POST /api/verify-image-provider — mirrors app/api/verify-image-provider/route.ts. Public.
+ * POST /api/verify-image-provider — mirrors app/_api_archive/verify-image-provider/route.ts. Public.
  */
 import { Hono } from 'hono';
 import { IMAGE_PROVIDERS, testImageConnectivity } from '@/lib/media/image-providers';

@@ -2,8 +2,8 @@
  * Shared types for the MAIC Agent SSE edit endpoint.
  *
  * Lives in `lib/` so client and server code can depend on it without importing
- * from `app/api/**` (the Next route is shadowed by the SaaS backend proxy and is
- * not a stable import target for lib/client code).
+ * from `app/_api_archive/**` (the Next route is shadowed by the SaaS backend proxy
+ * and is not a stable import target for lib/client code).
  */
 import type { SceneContext } from '@/lib/agent/tools/regenerate-scene-actions';
 
