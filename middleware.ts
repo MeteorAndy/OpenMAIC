@@ -5,6 +5,7 @@ import { updateSession } from '@/lib/supabase/middleware';
 function isPublic(pathname: string): boolean {
   return (
     pathname === '/' ||
+    pathname === '/pricing' ||
     pathname === '/login' ||
     pathname === '/signup' ||
     pathname === '/api/health' ||
@@ -15,6 +16,16 @@ function isPublic(pathname: string): boolean {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // /api/* requests carrying an Authorization header are authenticated by the
+  // compiled backend (JWKS), not by the cookie session — let them pass so the
+  // proxy stays a dumb pipe (public deployments expose only the Next origin,
+  // so direct API clients must be able to use Bearer through it). Cookie-based
+  // browser requests fall through to the session gate below.
+  if (pathname.startsWith('/api/') && request.headers.get('authorization')) {
+    return NextResponse.next();
+  }
+
   const { user, response } = await updateSession(request);
 
   if (!user && !isPublic(pathname)) {

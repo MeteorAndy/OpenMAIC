@@ -60,12 +60,21 @@ import { adminRoute } from './routes/admin';
 
 const app = new Hono();
 
-// ponytail: permissive CORS — Phase-3 frontend rewire will tighten this to the
-// Next origin (or proxy same-origin via next.config rewrite and drop CORS).
+// CORS: production deployments front the backend with the Next same-origin
+// proxy, so browsers never need cross-origin access. Set ALLOWED_ORIGIN
+// (comma-separated) for direct API clients; unset = echo any origin (dev).
+const allowedOrigins = (process.env.ALLOWED_ORIGIN ?? '')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
+if (allowedOrigins.length === 0) {
+  console.warn('[backend] ALLOWED_ORIGIN not set — echoing any request origin (dev mode)');
+}
 app.use(
   '/api/*',
   cors({
-    origin: (origin) => origin, // echo request origin (credentials-free Bearer auth)
+    origin: (origin) =>
+      allowedOrigins.length === 0 ? origin : allowedOrigins.includes(origin) ? origin : undefined,
     allowHeaders: [
       'Content-Type',
       'Authorization',

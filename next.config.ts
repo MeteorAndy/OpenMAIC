@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
   // (the "Edit with AI" Pro-mode path), which broke the #619 keep-alive e2e.
   // Mark them server-external so Next loads them natively and the dynamic
   // import resolves as a real Node call.
-  serverExternalPackages: ['@earendil-works/pi-ai', '@earendil-works/pi-agent-core'],
+  serverExternalPackages: ['@earendil-works/pi-ai', '@earendil-works/pi-agent-core', 'nodemailer'],
   experimental: {
     proxyClientMaxBodySize: '200mb',
   },

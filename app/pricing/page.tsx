@@ -105,6 +105,7 @@ export default async function PricingPage() {
               <CheckoutButton
                 planId={p.id}
                 label={p.priceMonthlyCents === 0 ? '免费使用' : '立即开通'}
+                href={p.priceMonthlyCents === 0 ? '/signup' : undefined}
               />
             </div>
           ))}

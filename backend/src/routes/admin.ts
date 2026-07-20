@@ -1,21 +1,25 @@
 /**
- * /api/admin — operator endpoints (plan provisioning + usage overview).
+ * /api/admin — operator endpoints (plan provisioning + user/usage management).
  *
  * Guarded by authMiddleware + the ADMIN_USER_IDS env allowlist. Until a real
  * billing provider is wired, POST /subscription is how paying customers get
- * their plan (operator collects payment offline, then provisions here).
- * User records/emails live in Supabase GoTrue — manage those via Studio
- * (same compose stack); this API only handles plans + usage.
+ * their plan (operator collects payment offline, then provisions here; the
+ * user gets a plan-activated email when EMAIL_PROVIDER is configured).
  */
-import { Hono } from 'hono';
+import { Hono, type Context } from 'hono';
 import { db } from '@/db/client';
-import { plan, subscription, usage } from '@/db/schema';
-import { and, eq } from 'drizzle-orm';
+import { plan } from '@/db/schema';
+import { eq } from 'drizzle-orm';
 import { apiError, apiSuccess } from '@/lib/server/api-response';
 import { setUserPlan } from '@/lib/server/billing';
 import { periodStartNow } from '@/lib/server/plans';
 import { isAdmin } from '@/lib/server/admin';
+import { getUserEmail, listAdminUsers, setUserBanned } from '@/lib/server/admin-users';
+import { getEmailProvider } from '@/lib/server/email';
+import { createLogger } from '@/lib/logger';
 import { authMiddleware, type AuthVars } from '../server/auth';
+
+const log = createLogger('Admin');
 
 export const adminRoute = new Hono<AuthVars>();
 adminRoute.use('*', authMiddleware);
@@ -31,28 +35,11 @@ adminRoute.get('/plans', async (c) => {
   return apiSuccess({ plans });
 });
 
-/** Subscriptions joined with plan + current-period usage. */
+/** Every registered account (email included) + plan + current-period usage. */
 adminRoute.get('/users', async (c) => {
   const periodStart = periodStartNow();
-  const rows = await db
-    .select({
-      userId: subscription.userId,
-      planId: subscription.planId,
-      planName: plan.name,
-      status: subscription.status,
-      currentPeriodEnd: subscription.currentPeriodEnd,
-      generations: usage.generations,
-      inputTokens: usage.inputTokens,
-      outputTokens: usage.outputTokens,
-      mediaSeconds: usage.mediaSeconds,
-    })
-    .from(subscription)
-    .leftJoin(plan, eq(subscription.planId, plan.id))
-    .leftJoin(
-      usage,
-      and(eq(usage.userId, subscription.userId), eq(usage.periodStart, periodStart)),
-    );
-  return apiSuccess({ periodStart: periodStart.toISOString(), users: rows });
+  const users = await listAdminUsers(periodStart);
+  return apiSuccess({ periodStart: periodStart.toISOString(), users });
 });
 
 adminRoute.post('/subscription', async (c) => {
@@ -65,5 +52,35 @@ adminRoute.post('/subscription', async (c) => {
   } catch (err) {
     return apiError('INVALID_REQUEST', 400, err instanceof Error ? err.message : 'Failed to set plan');
   }
+  // Plan-activated notice — fire-and-forget: a mail outage must not fail provisioning.
+  void (async () => {
+    try {
+      const email = await getUserEmail(body.userId!);
+      if (!email) return;
+      await getEmailProvider().send({
+        to: email,
+        subject: '你的 OpenMAIC 套餐已开通',
+        html: `<p>你好,</p><p>你的账号(${email})已开通 <b>${body.planId}</b> 套餐,即刻生效。感谢支持!</p><p>— OpenMAIC 团队</p>`,
+      });
+    } catch (err) {
+      log.warn(`plan-activated email failed for user=${body.userId}: ${err instanceof Error ? err.message : err}`);
+    }
+  })();
   return apiSuccess({ userId: body.userId, planId: body.planId });
 });
+
+/** Ban = block sign-in + revoke refresh tokens (GoTrue admin API). */
+adminRoute.post('/users/:id/ban', async (c) => setBanned(c, true));
+adminRoute.post('/users/:id/unban', async (c) => setBanned(c, false));
+
+async function setBanned(c: Context<AuthVars>, banned: boolean) {
+  const userId = c.req.param('id');
+  if (!userId) return apiError('MISSING_REQUIRED_FIELD', 400, 'user id is required');
+  try {
+    await setUserBanned(userId, banned);
+  } catch (err) {
+    return apiError('INTERNAL_ERROR', 502, err instanceof Error ? err.message : 'GoTrue admin call failed');
+  }
+  log.info(`user ${banned ? 'banned' : 'unbanned'}: ${userId} by admin=${c.get('userId')}`);
+  return apiSuccess({ userId, banned });
+}

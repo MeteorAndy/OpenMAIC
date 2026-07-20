@@ -1,14 +1,27 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 type CheckoutResponse =
   | { success: true; checkoutUrl: string }
   | { success: false; errorCode?: string; error?: string };
 
-export function CheckoutButton({ planId, label }: { planId: string; label: string }) {
+type QuotaResponse = { success: true; plan: { id: string } } | { success: false };
+
+export function CheckoutButton({ planId, label, href }: { planId: string; label: string; href?: string }) {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [isCurrent, setIsCurrent] = useState(false);
+
+  // Highlight the signed-in user's current plan. Unauthenticated → stays hidden.
+  useEffect(() => {
+    fetch('/api/quota')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: QuotaResponse | null) => {
+        if (data?.success && data.plan.id === planId) setIsCurrent(true);
+      })
+      .catch(() => {});
+  }, [planId]);
 
   async function onCheckout() {
     setLoading(true);
@@ -29,7 +42,7 @@ export function CheckoutButton({ planId, label }: { planId: string; label: strin
         return;
       }
       if (res.status === 501 || data?.errorCode === 'PROVIDER_DISABLED') {
-        setMessage('线上支付暂未开通,请扫描页脚二维码或联系运营开通');
+        setMessage('线上支付暂未开通,请联系运营开通(右下角客服或邮件)');
         return;
       }
       setMessage(data?.error ?? '下单失败,请稍后重试');
@@ -38,6 +51,26 @@ export function CheckoutButton({ planId, label }: { planId: string; label: strin
     } finally {
       setLoading(false);
     }
+  }
+
+  if (isCurrent) {
+    return (
+      <div className="w-full rounded-md border border-primary px-3 py-2 text-center text-sm font-medium text-primary">
+        当前套餐
+      </div>
+    );
+  }
+
+  // Free plan (or any non-payment CTA): plain navigation, no checkout call.
+  if (href) {
+    return (
+      <a
+        href={href}
+        className="block w-full rounded-md bg-primary px-3 py-2 text-center text-sm font-medium text-primary-foreground"
+      >
+        {label}
+      </a>
+    );
   }
 
   return (

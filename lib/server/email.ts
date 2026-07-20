@@ -1,16 +1,21 @@
 /**
- * App-level email seam (SaaS, feat/saas).
+ * App-level email (SaaS, feat/saas).
  *
  * NOTE: auth emails (signup confirm / password reset / magic link) are NOT
- * sent through here — GoTrue sends those; configure SMTP_HOST/SMTP_USER/... in
- * .saas-stack/.env (see .saas-stack/README.md). This seam is for app-level
- * transactional mail a commercial deployment will want: payment receipts,
- * quota warnings, operator notifications.
+ * sent through here — GoTrue sends those; configure SMTP_* in
+ * .saas-stack/.env (see .saas-stack/README.md). This module is for app-level
+ * transactional mail: plan-activated notices, receipts, operator alerts.
  *
- * Ships with the `log` provider (writes to the server log, no delivery).
- * To send real mail: implement EmailProvider (Resend / SMTP / 邮件推送),
- * register it in `providers`, set EMAIL_PROVIDER + keys in env.
+ * Providers (EMAIL_PROVIDER):
+ *   smtp — real delivery via nodemailer. Env: SMTP_HOST, SMTP_PORT,
+ *          SMTP_SECURE ("true" for 465/SSL), SMTP_USER, SMTP_PASS, SMTP_FROM
+ *          (defaults to SMTP_USER). Same account GoTrue uses is fine.
+ *   log  — writes to the server log only (default when unconfigured, so a
+ *          missing mail setup never breaks provisioning).
+ * More providers (Resend / 邮件推送 HTTP APIs): implement EmailProvider and
+ * register in `providers`.
  */
+import nodemailer, { type Transporter } from 'nodemailer';
 import { createLogger } from '@/lib/logger';
 
 const log = createLogger('Email');
@@ -34,12 +39,47 @@ const logProvider: EmailProvider = {
   },
 };
 
+function createSmtpProvider(): EmailProvider {
+  const { SMTP_HOST, SMTP_PORT, SMTP_SECURE, SMTP_USER, SMTP_PASS, SMTP_FROM } = process.env;
+  if (!SMTP_HOST || !SMTP_USER || !SMTP_PASS) {
+    throw new Error('EMAIL_PROVIDER=smtp requires SMTP_HOST, SMTP_USER and SMTP_PASS');
+  }
+  let transporter: Transporter | null = null;
+  const getTransporter = (): Transporter => {
+    if (!transporter) {
+      transporter = nodemailer.createTransport({
+        host: SMTP_HOST,
+        port: Number(SMTP_PORT ?? (SMTP_SECURE === 'true' ? 465 : 587)),
+        secure: SMTP_SECURE === 'true',
+        auth: { user: SMTP_USER, pass: SMTP_PASS },
+      });
+    }
+    return transporter;
+  };
+  return {
+    id: 'smtp',
+    async send(msg) {
+      await getTransporter().sendMail({
+        from: SMTP_FROM || SMTP_USER,
+        to: msg.to,
+        subject: msg.subject,
+        html: msg.html,
+      });
+      log.info(`[email:smtp] sent to=${msg.to} subject=${msg.subject}`);
+    },
+  };
+}
+
 const providers: Record<string, () => EmailProvider> = {
   log: () => logProvider,
-  // resend: () => resendProvider,  // <- real integrations register here
+  smtp: createSmtpProvider,
+  // resend: () => resendProvider,  // <- HTTP-API providers register here
 };
 
-/** Active provider, selected by EMAIL_PROVIDER (default: log). */
+/**
+ * Active provider. EMAIL_PROVIDER unset/unknown or SMTP env incomplete ->
+ * log fallback (email is never a hard dependency of a business flow).
+ */
 export function getEmailProvider(): EmailProvider {
   const id = (process.env.EMAIL_PROVIDER ?? 'log').trim() || 'log';
   const factory = providers[id];
@@ -47,5 +87,10 @@ export function getEmailProvider(): EmailProvider {
     log.warn(`unknown EMAIL_PROVIDER '${id}', falling back to log`);
     return logProvider;
   }
-  return factory();
+  try {
+    return factory();
+  } catch (err) {
+    log.warn(`email provider '${id}' misconfigured (${err instanceof Error ? err.message : err}); falling back to log`);
+    return logProvider;
+  }
 }

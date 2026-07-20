@@ -67,9 +67,11 @@ pnpm build && pnpm start      # 或 standalone: node .next/standalone/server.js
 
 验证:`curl http://localhost:3000/api/health` 应经代理打到后端并返回 200;注册一个账号,Studio 里能看到用户。
 
-## 4. 邮件(GoTrue SMTP)
+## 4. 邮件(SMTP)
 
-注册确认、找回密码由 **GoTrue** 直接发送,与应用代码无关。在 `.saas-stack/.env` 配:
+两类邮件,两条独立通路,都配好才算完成:
+
+**(a) 认证邮件**(注册确认 / 找回密码)—— 由 **GoTrue** 直接发送,与应用代码无关。在 `.saas-stack/.env` 配:
 
 ```bash
 SMTP_HOST=smtp.163.com   # 或 SES / Resend SMTP / QQ 邮箱
@@ -80,7 +82,26 @@ SMTP_ADMIN_EMAIL=no-reply@your-domain
 ENABLE_EMAIL_AUTOCONFIRM=false   # 生产必须 false(开发可 true 跳过验证)
 ```
 
-应用级事务邮件(收据/配额告警)走 `lib/server/email.ts` 接缝:默认 `EMAIL_PROVIDER=log`(只记日志不发送),实现 `EmailProvider` 后注册即可。
+**(b) 应用级事务邮件**(套餐开通通知等)—— 走应用内 provider(根目录 `.env.local`):
+
+```bash
+EMAIL_PROVIDER=smtp
+SMTP_HOST=smtp.163.com   # 与 (a) 同账号即可
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=...
+SMTP_PASS=...
+SMTP_FROM=no-reply@your-domain
+```
+
+`EMAIL_PROVIDER` 缺省为 `log`(只记日志不发送)—— 邮件永远是业务的软依赖,发信失败不会阻断开通流程,只会记一条 warn。
+
+## 4.5 监控与健康检查
+
+- **健康端点**:后端 `GET /api/health`(无需鉴权,返回能力位)。用 Uptime Kuma / 阿里云云监控 / cron+curl 每 1–5 分钟探一次,非 200 告警。
+- **容器健康**:`.saas-stack` compose 各服务自带 healthcheck,`docker ps` 一眼可见 unhealthy。
+- **日志**:后端二进制 stdout(建议 systemd/journald 或 `docker logs`);Postgres/Kong 在容器日志里。至少把后端日志持久化到文件并轮转。
+- **容量**:关注 `volumes/db/data` 与 `volumes/storage` 磁盘占用;备份脚本(§5)失败应告警(cron 邮件或 curl 告警钩子)。
 
 ## 5. 备份与恢复
 
@@ -100,8 +121,10 @@ gunzip -c /var/backups/openmaic/openmaic-saas-<ts>.sql.gz | docker exec -i supab
 
 - **开通/调整套餐**:访问 `/admin`(账号需在 `ADMIN_USER_IDS`),或
   `curl -X POST $BACKEND/api/admin/subscription -H "Authorization: Bearer <admin JWT>" -d '{"userId":"...","planId":"pro"}'`
-- **查用户邮箱/封禁**:Supabase Studio(`http://<kong>/` → DASHBOARD 账密)。admin API 只管套餐与用量。
-- **看用量**:`/admin` 表格,或 `GET /api/admin/users`。
+  开通后用户会收到"套餐已开通"邮件(§4 (b) 配好时)。
+- **查用户/用量**:`/admin` 表格(邮箱 + 套餐 + 本期用量,支持过滤)。
+- **封禁/解封**:`/admin` 行内按钮(走 GoTrue admin API,立即吊销登录态);
+  改邮箱/删号等底层操作用 Supabase Studio(`http://<kong>/` → DASHBOARD 账密)。
 
 ## 7. 支付接入(给客户/渠道接线时读)
 
@@ -122,6 +145,9 @@ gunzip -c /var/backups/openmaic/openmaic-saas-<ts>.sql.gz | docker exec -i supab
 - [ ] `DISABLE_SIGNUP` 按需(开放注册则 false)
 - [ ] HTTPS 终结(前置 Caddy/Nginx),`SITE_URL` / `ADDITIONAL_REDIRECT_URLS` 与域名一致
 - [ ] `ADMIN_USER_IDS` 只含运营账号
+- [ ] `ALLOWED_ORIGIN` 已设置为正式域名(后端不再回显任意来源)
+- [ ] `EMAIL_PROVIDER=smtp` 且测试过一封真实邮件(开通一个测试套餐)
+- [ ] `/api/health` 已挂外部监控(§4.5)
 - [ ] Kong 8000 不直接暴露公网(仅 Next 与后端可达),对外只开 443
 - [ ] 备份 cron 已跑通过一次,且**演练过恢复**
 - [ ] `RATE_LIMIT_PER_MINUTE` 按客群调好(默认 30)
@@ -129,5 +155,5 @@ gunzip -c /var/backups/openmaic/openmaic-saas-<ts>.sql.gz | docker exec -i supab
 ## 9. 已知边界(设计文档明确 deferred,接单前评估)
 
 - team/org 多席位、细粒度限流、同步冲突解决(现 last-write-wins)、桌面版本地数据迁移
-- 管理后台为极简版(套餐+用量);无用户管理 UI(用 Studio)
+- 管理后台覆盖日常(套餐/用量/封禁);改邮箱、删号等底层操作仍需 Supabase Studio
 - Landing 页只有 `/pricing`,无营销站点
