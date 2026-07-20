@@ -141,6 +141,30 @@ note describing the commercial hosted-service form. `mathml2omml` LGPL handling 
 
 ## 14. Status (as built on feat/saas)
 
+> **Status update (2026-07-20):** the original Phase plan below is superseded in
+> parts — auth landed on **self-hosted Supabase GoTrue** (ES256/JWKS) instead of
+> better-auth, and the split shipped as **compiled Bun/Hono backend + Next UI-only
+> proxy**: `app/api` is archived to `app/_api_archive` (zero `/api` routes in the
+> Next build; prompts baked into the binary). New seams landed since:
+>
+> - **Billing seam** — `lib/server/billing.ts` (`BillingProvider` + `manual`
+>   provider + `setUserPlan`/`cancelUserPlan` mutations) and `/api/billing/*
+>   {checkout,portal,webhook}` routes. Real providers (Stripe/微信/支付宝) drop in
+>   without touching business code — see `.saas-stack/README.md` §7.
+> - **Admin** — `ADMIN_USER_IDS` env gate (`lib/server/admin.ts`),
+>   `/api/admin/{plans,users,subscription}` routes, minimal `/admin` page.
+> - **Email seam** — `lib/server/email.ts` (app-level; auth emails are GoTrue's,
+>   via `.saas-stack` SMTP env).
+> - **Pricing** — `/pricing` page (DB-backed, CTA wired to `/api/billing/checkout`,
+>   501 → "contact operator" state).
+> - **Infra** — `.saas-stack/` now committed (compose + vendored supabase configs;
+>   secrets/data gitignored) with a Redis service added; DB backup script
+>   `scripts/backup-saas-db.sh`; deploy runbook `.saas-stack/README.md`.
+>
+> Still deferred (unchanged): team/org multi-seat, fine-grained rate-limit
+> tuning, full sync-conflict resolution, desktop local-data migration, real
+> payment provider implementation, rich admin UI.
+
 Shipped:
 - **Phase 1** DB foundation — Drizzle schema (auth + business + commerce), `db/client`,
   migrations, `docker-compose.yml` (postgres + minio + opt-in app).
@@ -179,6 +203,10 @@ scene-outlines-stream,agent-profiles}`, `pbl/*`, `agent/edit`, `quiz-grade`, `we
 calls generation libs directly, not the routes, so gating does not break it.)
 
 ## 15. Run / deploy
+
+> **Superseded** by `.saas-stack/README.md` (self-hosted Supabase stack +
+> compiled backend + Next UI). The flow below describes the original
+> minio-based skeleton and is kept for history.
 
 ```bash
 # 1. infra

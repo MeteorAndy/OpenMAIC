@@ -55,6 +55,8 @@ import { proxyMediaRoute } from './routes/proxy-media';
 import { comfyuiWorkflowsRoute } from './routes/comfyui-workflows';
 import { providerProbeModelsRoute } from './routes/provider-probe-models';
 import { accessCodeStatusRoute, accessCodeVerifyRoute } from './routes/access-code';
+import { billingRoute } from './routes/billing';
+import { adminRoute } from './routes/admin';
 
 const app = new Hono();
 
@@ -125,6 +127,10 @@ app.route('/api/comfyui-workflows', comfyuiWorkflowsRoute);
 app.route('/api/provider/probe-models', providerProbeModelsRoute);
 app.route('/api/access-code/status', accessCodeStatusRoute);
 app.route('/api/access-code/verify', accessCodeVerifyRoute);
+
+// SaaS seams: billing (manual provider until a real one is wired) + admin.
+app.route('/api/billing', billingRoute);
+app.route('/api/admin', adminRoute);
 
 app.notFound((c) =>
   c.json({ success: false, errorCode: 'NOT_FOUND', error: `Route ${c.req.method} ${c.req.path} not found` }, 404),

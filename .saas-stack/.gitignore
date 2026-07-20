@@ -8,6 +8,9 @@ volumes/db/data/
 # Runtime object-storage blobs (user uploads) — back up at the storage level.
 volumes/storage/
 
+# Redis AOF persistence (rate limiting / queues — rebuildable, but avoid the noise).
+volumes/redis/
+
 # Runtime edge-function / snippet drop-ins (empty by default).
 volumes/functions/
 volumes/snippets/

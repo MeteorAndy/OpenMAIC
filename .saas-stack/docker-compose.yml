@@ -588,6 +588,23 @@ services:
         "/app/bin/migrate && /app/bin/supavisor eval \"$$(cat /etc/pooler/pooler.exs)\" && /app/bin/server"
       ]
 
+  # Rate limiting (lib/server/rate-limit.ts) + job queues (BullMQ) for the
+  # OpenMAIC backend. Fail-open: the app works without it, throttles degrade.
+  redis:
+    container_name: openmaic-redis
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    volumes:
+      - ./volumes/redis:/data:z
+    ports:
+      - ${REDIS_PORT:-6379}:6379
+
 volumes:
   db-config:
   deno-cache:
