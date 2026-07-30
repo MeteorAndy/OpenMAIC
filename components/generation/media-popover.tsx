@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo, Fragment } from 'react';
+import { useState, useMemo, Fragment, useEffect } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   Image as ImageIcon,
@@ -57,6 +57,22 @@ function cfgOk(
   return !needsKey || !!configs[id]?.apiKey || !!configs[id]?.isServerConfigured;
 }
 
+function providerModels<T extends { id: string; name: string }>(
+  builtInModels: T[],
+  config?: { customModels?: T[]; replaceBuiltInModels?: boolean },
+): T[] {
+  const customModels = config?.customModels || [];
+  if (config?.replaceBuiltInModels && customModels.length > 0) {
+    return customModels;
+  }
+  // Dedupe: a model the user once added as custom may have since been promoted
+  // to built-in (or carried over from an older schema, e.g. feat→main). Keep
+  // built-in, drop the stale custom entry so we never render two items with
+  // the same id (duplicate React keys).
+  const builtInIds = new Set(builtInModels.map((m) => m.id));
+  return [...builtInModels, ...customModels.filter((m) => !builtInIds.has(m.id))];
+}
+
 export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
@@ -90,6 +106,14 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
   const setASRProvider = useSettingsStore((s) => s.setASRProvider);
   const setASRLanguage = useSettingsStore((s) => s.setASRLanguage);
 
+  const [comfyWorkflows, setComfyWorkflows] = useState<Array<{ id: string; name: string }>>([]);
+  useEffect(() => {
+    fetch('/api/comfyui-workflows')
+      .then((r) => r.json())
+      .then((d) => setComfyWorkflows(d.workflows || []))
+      .catch(() => setComfyWorkflows([]));
+  }, []);
+
   const enabledMap: Record<TabId, boolean> = {
     image: imageGenerationEnabled,
     video: videoGenerationEnabled,
@@ -104,24 +128,24 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
     () =>
       Object.values(IMAGE_PROVIDERS)
         .filter((p) => cfgOk(imageProvidersConfig, p.id, p.requiresApiKey))
-        .map((p) => ({
-          groupId: p.id,
-          groupName: p.name,
-          groupIcon: p.icon,
-          items: [
-            ...p.models,
-            // Dedupe customModels vs built-in: a model promoted to built-in (or
-            // carried over from an older schema) must not also linger as custom —
-            // two same ids => duplicate React keys.
-            ...(imageProvidersConfig[p.id]?.customModels || []).filter(
-              (c) => !p.models.some((b) => b.id === c.id),
-            ),
-          ].map((m) => ({
-            id: m.id,
-            name: m.name,
-          })),
-        })),
-    [imageProvidersConfig],
+        .map((p) => {
+          const items =
+            p.id === 'comfyui-image'
+              ? comfyWorkflows
+              : providerModels(p.models, imageProvidersConfig[p.id]);
+
+          return {
+            groupId: p.id,
+            groupName: p.name,
+            groupIcon: p.icon,
+            // Map to a consistent format here
+            items: items.map((m) => ({
+              id: m.id,
+              name: m.name,
+            })),
+          };
+        }),
+    [imageProvidersConfig, comfyWorkflows],
   );
 
   const videoGroups = useMemo(
@@ -132,12 +156,7 @@ export function MediaPopover({ onSettingsOpen }: MediaPopoverProps) {
           groupId: p.id,
           groupName: p.name,
           groupIcon: p.icon,
-          items: [
-            ...p.models,
-            ...(videoProvidersConfig[p.id]?.customModels || []).filter(
-              (c) => !p.models.some((b) => b.id === c.id),
-            ),
-          ].map((m) => ({
+          items: providerModels(p.models, videoProvidersConfig[p.id]).map((m) => ({
             id: m.id,
             name: m.name,
           })),

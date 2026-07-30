@@ -12,6 +12,7 @@
  */
 import type Dexie from 'dexie';
 import type JSZip from 'jszip';
+import type { exportDatabase as exportDatabaseType } from '@/lib/utils/database';
 
 export const BACKUP_FORMAT_VERSION = 1;
 export const BACKUP_MAGIC = 'maic-db-backup';
@@ -45,6 +46,7 @@ interface BackupJson {
   exportedAt: string;
   counts: Record<string, number>;
   tables: Record<string, unknown[]>;
+  database?: Awaited<ReturnType<typeof exportDatabaseType>>;
 }
 
 type Rec = Record<string, unknown>;
@@ -72,6 +74,8 @@ export async function exportAllTables(db: Dexie): Promise<Blob> {
   const zip = new JSZip();
   const counts: Record<string, number> = {};
   const tablesJson: Record<string, unknown[]> = {};
+  const { exportDatabase } = await import('@/lib/utils/database');
+  const database = await exportDatabase();
 
   for (const table of db.tables) {
     const name = table.name;
@@ -105,6 +109,7 @@ export async function exportAllTables(db: Dexie): Promise<Blob> {
     exportedAt: new Date().toISOString(),
     counts,
     tables: tablesJson,
+    database,
   };
   zip.file('backup.json', JSON.stringify(backup));
   return zip.generateAsync({ type: 'blob' });
@@ -165,6 +170,11 @@ export async function importAllTables(zipBlob: Blob, db: Dexie): Promise<void> {
       if (recs.length > 0) await db.table(name).bulkPut(recs);
     }
   });
+
+  if (backup.database) {
+    const { importDatabase } = await import('@/lib/utils/database');
+    await importDatabase(backup.database);
+  }
 }
 
 /**

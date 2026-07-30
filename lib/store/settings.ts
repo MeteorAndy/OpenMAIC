@@ -1,6 +1,10 @@
 /**
  * Settings Store
- * Global settings state synchronized with localStorage
+ *
+ * Global settings, persisted through the `@openmaic/storage` KVStore in the
+ * `account` scope. The bulk of this store is the user's provider/model
+ * configuration — the canonical `account`-scoped value in the storage contract,
+ * and the thing a second device should not have to be told again.
  */
 
 import { create } from 'zustand';
@@ -8,6 +12,7 @@ import { persist } from 'zustand/middleware';
 import type { ProviderId } from '@/lib/ai/providers';
 import type { ProvidersConfig } from '@/lib/types/settings';
 import { PROVIDERS } from '@/lib/ai/providers';
+import { findModelById, getCanonicalModelId } from '@/lib/ai/model-aliases';
 import type { ThinkingConfig } from '@/lib/types/provider';
 import { getThinkingConfigKey, supportsConfigurableThinking } from '@/lib/ai/thinking-config';
 import type { TTSProviderId, ASRProviderId, BuiltInTTSProviderId } from '@/lib/audio/types';
@@ -20,7 +25,7 @@ import type { PDFProviderId } from '@/lib/pdf/types';
 import type { ImageProviderId, VideoProviderId } from '@/lib/media/types';
 import { IMAGE_PROVIDERS } from '@/lib/media/image-providers';
 import { VIDEO_PROVIDERS } from '@/lib/media/video-providers';
-import { WEB_SEARCH_PROVIDERS } from '@/lib/web-search/constants';
+import { WEB_SEARCH_PROVIDERS, buildWebSearchFallbackOrder } from '@/lib/web-search/constants';
 import type { BaiduSubSources, WebSearchProviderId } from '@/lib/web-search/types';
 import { createLogger } from '@/lib/logger';
 import {
@@ -28,8 +33,19 @@ import {
   resolveSelectedModel,
   isLLMProviderConfigured,
 } from '@/lib/store/settings-validation';
+import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-persist';
 
 const log = createLogger('Settings');
+
+/** Persisted-blob version for zustand's `persist` `migrate` ladder. */
+const SETTINGS_PERSIST_VERSION = 4;
+
+/**
+ * Bound after the store exists; see `onWriteRefused` for why it is not inlined.
+ * The explicit annotation is what breaks the type cycle — inferring this from
+ * the store would put the store back in its own definition.
+ */
+const recovery: { rehydrate?: () => void | Promise<void> } = {};
 
 function pruneThinkingConfigs(
   thinkingConfigs: Record<string, ThinkingConfig> | undefined,
@@ -124,6 +140,10 @@ export interface SettingsState {
       enabled: boolean;
       requiresApiKey?: boolean;
       isServerConfigured?: boolean;
+      /** Aliyun AccessKey ID (AliDocMind). */
+      accessKeyId?: string;
+      /** Aliyun AccessKey Secret (AliDocMind). */
+      accessKeySecret?: string;
     }
   >;
   baiduSubSources: BaiduSubSources;
@@ -139,6 +159,7 @@ export interface SettingsState {
       enabled: boolean;
       isServerConfigured?: boolean;
       customModels?: Array<{ id: string; name: string }>;
+      replaceBuiltInModels?: boolean;
     }
   >;
 
@@ -153,6 +174,7 @@ export interface SettingsState {
       enabled: boolean;
       isServerConfigured?: boolean;
       customModels?: Array<{ id: string; name: string }>;
+      replaceBuiltInModels?: boolean;
     }
   >;
 
@@ -215,7 +237,6 @@ export interface SettingsState {
   chatAreaWidth: number;
   editRailCollapsed: boolean;
   editRailWidth: number;
-  editInsertToolbarCollapsed: boolean;
 
   // Actions
   setModel: (providerId: ProviderId, modelId: string) => void;
@@ -243,7 +264,6 @@ export interface SettingsState {
   setChatAreaCollapsed: (collapsed: boolean) => void;
   setChatAreaWidth: (width: number) => void;
   setEditRailCollapsed: (collapsed: boolean) => void;
-  setEditInsertToolbarCollapsed: (collapsed: boolean) => void;
   setEditRailWidth: (width: number) => void;
 
   // Audio actions
@@ -299,7 +319,13 @@ export interface SettingsState {
   setPDFProvider: (providerId: PDFProviderId) => void;
   setPDFProviderConfig: (
     providerId: PDFProviderId,
-    config: Partial<{ apiKey: string; baseUrl: string; enabled: boolean }>,
+    config: Partial<{
+      apiKey: string;
+      baseUrl: string;
+      enabled: boolean;
+      accessKeyId: string;
+      accessKeySecret: string;
+    }>,
   ) => void;
 
   // Image Generation actions
@@ -312,6 +338,7 @@ export interface SettingsState {
       baseUrl: string;
       enabled: boolean;
       customModels: Array<{ id: string; name: string }>;
+      replaceBuiltInModels: boolean;
     }>,
   ) => void;
 
@@ -325,6 +352,7 @@ export interface SettingsState {
       baseUrl: string;
       enabled: boolean;
       customModels: Array<{ id: string; name: string }>;
+      replaceBuiltInModels: boolean;
     }>,
   ) => void;
 
@@ -389,9 +417,44 @@ function resolveLLMSelection(
     ? currentProviderId
     : ((Object.keys(config) as ProviderId[]).find(isUsable) ?? ('' as ProviderId));
   const modelId = providerId
-    ? resolveSelectedModel(currentModelId, config[providerId]?.models ?? [])
+    ? resolveSelectedLLMModel(providerId, currentModelId, config[providerId]?.models ?? [])
     : '';
   return { providerId, modelId };
+}
+
+/** Keep the caller's wire model ID when it resolves to a known catalog alias. */
+function resolveSelectedLLMModel(
+  providerId: ProviderId,
+  currentModelId: string,
+  availableModels: Array<{ id: string }>,
+): string {
+  if (availableModels.some((model) => model.id === currentModelId)) return currentModelId;
+  const canonicalModelId = getCanonicalModelId(providerId, currentModelId);
+  if (
+    canonicalModelId !== currentModelId &&
+    availableModels.some((model) => model.id === canonicalModelId)
+  ) {
+    return currentModelId;
+  }
+  return availableModels[0]?.id ?? '';
+}
+
+function resolveMediaModels<T extends { id: string; name: string }>(
+  builtInModels: T[],
+  config?: { customModels?: T[]; replaceBuiltInModels?: boolean },
+): T[] {
+  const customModels = config?.customModels ?? [];
+  return config?.replaceBuiltInModels && customModels.length > 0
+    ? customModels
+    : [...builtInModels, ...customModels];
+}
+
+function isUsableMediaProvider(
+  provider: { requiresApiKey: boolean } | undefined,
+  config: { apiKey?: string; enabled?: boolean; isServerConfigured?: boolean } | undefined,
+): boolean {
+  if (!provider || config?.enabled === false) return false;
+  return !provider.requiresApiKey || !!config?.apiKey || !!config?.isServerConfigured;
 }
 
 // Initialize default audio config
@@ -449,7 +512,17 @@ const getDefaultPDFConfig = () => ({
     unpdf: { apiKey: '', baseUrl: '', enabled: true },
     mineru: { apiKey: '', baseUrl: '', enabled: false },
     'mineru-cloud': { apiKey: '', baseUrl: '', enabled: false },
-  } as Record<PDFProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
+    alidocmind: { apiKey: '', baseUrl: '', enabled: false, accessKeyId: '', accessKeySecret: '' },
+  } as Record<
+    PDFProviderId,
+    {
+      apiKey: string;
+      baseUrl: string;
+      enabled: boolean;
+      accessKeyId?: string;
+      accessKeySecret?: string;
+    }
+  >,
 });
 
 // Initialize default Image config
@@ -463,6 +536,7 @@ const getDefaultImageConfig = () => ({
     'nano-banana': { apiKey: '', baseUrl: '', enabled: false },
     'minimax-image': { apiKey: '', baseUrl: '', enabled: false },
     'grok-image': { apiKey: '', baseUrl: '', enabled: false },
+    'comfyui-image': { apiKey: '', baseUrl: '', enabled: false },
     lemonade: { apiKey: '', baseUrl: '', enabled: false },
   } as Record<ImageProviderId, { apiKey: string; baseUrl: string; enabled: boolean }>,
 });
@@ -470,7 +544,7 @@ const getDefaultImageConfig = () => ({
 // Initialize default Video config
 const getDefaultVideoConfig = () => ({
   videoProviderId: 'seedance' as VideoProviderId,
-  videoModelId: 'doubao-seedance-1-5-pro-251215',
+  videoModelId: 'doubao-seedance-2-0-260128',
   videoProvidersConfig: {
     seedance: { apiKey: '', baseUrl: '', enabled: false },
     kling: { apiKey: '', baseUrl: '', enabled: false },
@@ -500,6 +574,18 @@ const getDefaultWebSearchConfig = () => ({
       baseUrl: WEB_SEARCH_PROVIDERS.minimax.defaultBaseUrl || '',
       enabled: true,
       requiresApiKey: true,
+    },
+    doubao: {
+      apiKey: '',
+      baseUrl: WEB_SEARCH_PROVIDERS.doubao.defaultBaseUrl || '',
+      enabled: true,
+      requiresApiKey: true,
+    },
+    searxng: {
+      apiKey: '',
+      baseUrl: '',
+      enabled: true,
+      requiresApiKey: false,
     },
   } as Record<
     WebSearchProviderId,
@@ -671,6 +757,23 @@ function ensureBuiltInImageProviders(state: Partial<SettingsState>): void {
 }
 
 /**
+ * Backfill built-in PDF/document providers into persisted state. Without this,
+ * a provider added after a user's persisted state was written (e.g. AliDocMind)
+ * never appears in `pdfProvidersConfig`, so it can't be selected and never
+ * picks up its server-configured flag on rehydrate.
+ */
+function ensureBuiltInPDFProviders(state: Partial<SettingsState>): void {
+  if (!state.pdfProvidersConfig) return;
+  const defaultConfig = getDefaultPDFConfig().pdfProvidersConfig;
+  Object.keys(PDF_PROVIDERS).forEach((pid) => {
+    const providerId = pid as PDFProviderId;
+    if (!state.pdfProvidersConfig![providerId]) {
+      state.pdfProvidersConfig![providerId] = defaultConfig[providerId];
+    }
+  });
+}
+
+/**
  * Ensure videoProvidersConfig includes all built-in video providers.
  * Called on every rehydrate so newly added video providers appear automatically.
  */
@@ -741,94 +844,25 @@ function stripLegacyServerBaseUrl(state: Partial<SettingsState>): void {
   }
 }
 
-// Migrate from old localStorage format
-const migrateFromOldStorage = () => {
-  if (typeof window === 'undefined') return null;
-
-  // Check if new storage already exists
-  const newStorage = localStorage.getItem('settings-storage');
-  if (newStorage) return null; // Already migrated or new install
-
-  // Read old localStorage keys
-  const oldLlmModel = localStorage.getItem('llmModel');
-  const oldProvidersConfig = localStorage.getItem('providersConfig');
-  const oldTtsModel = localStorage.getItem('ttsModel');
-  const oldSelectedAgents = localStorage.getItem('selectedAgentIds');
-
-  if (!oldLlmModel && !oldProvidersConfig) return null; // No old data
-
-  // Parse model selection
-  let providerId: ProviderId = 'openai';
-  let modelId = 'gpt-5.4-mini';
-  if (oldLlmModel) {
-    const [pid, mid] = oldLlmModel.split(':');
-    if (pid && mid) {
-      providerId = pid as ProviderId;
-      modelId = mid;
-    }
-  }
-
-  // Parse providers config
-  let providersConfig = getDefaultProvidersConfig();
-  if (oldProvidersConfig) {
-    try {
-      const parsed = JSON.parse(oldProvidersConfig);
-      providersConfig = { ...providersConfig, ...parsed };
-    } catch (e) {
-      log.error('Failed to parse old providersConfig:', e);
-    }
-  }
-
-  // Parse other settings
-  let ttsModel = 'openai-tts';
-  if (oldTtsModel) ttsModel = oldTtsModel;
-
-  let selectedAgentIds = ['default-1', 'default-2', 'default-3'];
-  if (oldSelectedAgents) {
-    try {
-      const parsed = JSON.parse(oldSelectedAgents);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        selectedAgentIds = parsed;
-      }
-    } catch (e) {
-      log.error('Failed to parse old selectedAgentIds:', e);
-    }
-  }
-
-  return {
-    providerId,
-    modelId,
-    thinkingConfigs: {},
-    providersConfig,
-    ttsModel,
-    selectedAgentIds,
-  };
-};
-
 export const useSettingsStore = create<SettingsState>()(
   persist(
     (set, get) => {
-      // Try to migrate from old storage
-      const migratedData = migrateFromOldStorage();
       const defaultAudioConfig = getDefaultAudioConfig();
       const defaultPDFConfig = getDefaultPDFConfig();
       const defaultImageConfig = getDefaultImageConfig();
       const defaultVideoConfig = getDefaultVideoConfig();
       const defaultWebSearchConfig = getDefaultWebSearchConfig();
 
-      const initialProvidersConfig = migratedData?.providersConfig || getDefaultProvidersConfig();
-
       return {
-        // Initial state (use migrated data if available)
-        providerId: migratedData?.providerId || 'openai',
-        modelId: migratedData?.modelId || '',
-        thinkingConfigs: pruneThinkingConfigs(
-          migratedData?.thinkingConfigs || {},
-          initialProvidersConfig,
-        ),
-        providersConfig: initialProvidersConfig,
-        ttsModel: migratedData?.ttsModel || 'openai-tts',
-        selectedAgentIds: migratedData?.selectedAgentIds || ['default-1', 'default-2', 'default-3'],
+        // Initial state is plain defaults. This store does not migrate any
+        // pre-cutover localStorage data — everything persisted arrives through
+        // the KVStore on rehydration; an upgrading user reconfigures once.
+        providerId: 'openai' as ProviderId,
+        modelId: '',
+        thinkingConfigs: {},
+        providersConfig: getDefaultProvidersConfig(),
+        ttsModel: 'openai-tts',
+        selectedAgentIds: ['default-1', 'default-2', 'default-3'],
         agentMode: 'auto' as const,
         autoAgentCount: 3,
         agentVoiceOverrides: {},
@@ -846,7 +880,6 @@ export const useSettingsStore = create<SettingsState>()(
         chatAreaWidth: 320,
         editRailCollapsed: false,
         editRailWidth: 220,
-        editInsertToolbarCollapsed: false,
 
         // Audio settings (use defaults)
         ...defaultAudioConfig,
@@ -971,8 +1004,6 @@ export const useSettingsStore = create<SettingsState>()(
         setChatAreaCollapsed: (collapsed) => set({ chatAreaCollapsed: collapsed }),
         setEditRailCollapsed: (collapsed) => set({ editRailCollapsed: collapsed }),
         setEditRailWidth: (width) => set({ editRailWidth: width }),
-        setEditInsertToolbarCollapsed: (collapsed) =>
-          set({ editInsertToolbarCollapsed: collapsed }),
         setChatAreaWidth: (width) => set({ chatAreaWidth: width }),
 
         // Audio actions
@@ -1014,15 +1045,26 @@ export const useSettingsStore = create<SettingsState>()(
         setASRLanguage: (language) => set({ asrLanguage: language }),
 
         setTTSProviderConfig: (providerId, config) =>
-          set((state) => ({
-            ttsProvidersConfig: {
+          set((state) => {
+            const ttsProvidersConfig = {
               ...state.ttsProvidersConfig,
               [providerId]: {
                 ...state.ttsProvidersConfig[providerId],
                 ...config,
               },
-            },
-          })),
+            };
+            // Disabling the active provider (e.g. removing a token plan) switches
+            // the selection back to the always-available browser TTS so playback
+            // doesn't keep pointing at a disabled provider with an empty key.
+            if (state.ttsProviderId === providerId && config.enabled === false) {
+              return {
+                ttsProvidersConfig,
+                ttsProviderId: getDefaultAudioConfig().ttsProviderId,
+                ttsVoice: 'default',
+              };
+            }
+            return { ttsProvidersConfig };
+          }),
 
         setASRProviderConfig: (providerId, config) =>
           set((state) => ({
@@ -1055,7 +1097,10 @@ export const useSettingsStore = create<SettingsState>()(
             imageProviderId: providerId,
             imageModelId: resolveSelectedModel(
               state.imageModelId,
-              IMAGE_PROVIDERS[providerId]?.models ?? [],
+              resolveMediaModels(
+                IMAGE_PROVIDERS[providerId]?.models ?? [],
+                state.imageProvidersConfig[providerId],
+              ),
             ),
           })),
         setImageModelId: (modelId) => set({ imageModelId: modelId }),
@@ -1071,14 +1116,37 @@ export const useSettingsStore = create<SettingsState>()(
               [providerId]: mergedProvider,
             };
             const base = { imageProvidersConfig };
-            // Atomic invariant (#580): a config edit on the active image
-            // provider (e.g. deleting the selected custom model) must not
-            // leave imageModelId pointing at a model that no longer exists.
             if (state.imageProviderId === providerId) {
-              const models = [
-                ...(IMAGE_PROVIDERS[providerId]?.models ?? []),
-                ...(mergedProvider.customModels ?? []),
-              ];
+              // Disabling the active provider (e.g. removing a token plan) must
+              // switch the selection away to the default, or generation paths
+              // keep pointing at a disabled provider with an empty key.
+              if (config.enabled === false) {
+                const providerIds = Object.keys(IMAGE_PROVIDERS) as ImageProviderId[];
+                const usableFallback = providerIds.find(
+                  (id) =>
+                    id !== providerId &&
+                    isUsableMediaProvider(IMAGE_PROVIDERS[id], imageProvidersConfig[id]),
+                );
+                const fallback =
+                  usableFallback ?? providerIds.find((id) => id !== providerId) ?? providerId;
+                const fallbackModels = resolveMediaModels(
+                  IMAGE_PROVIDERS[fallback]?.models ?? [],
+                  imageProvidersConfig[fallback],
+                );
+                return {
+                  ...base,
+                  imageProviderId: fallback,
+                  imageModelId: resolveSelectedModel(state.imageModelId, fallbackModels),
+                  ...(!usableFallback ? { imageGenerationEnabled: false } : {}),
+                };
+              }
+              // Atomic invariant (#580): a config edit on the active image
+              // provider (e.g. deleting the selected custom model) must not
+              // leave imageModelId pointing at a model that no longer exists.
+              const models = resolveMediaModels(
+                IMAGE_PROVIDERS[providerId]?.models ?? [],
+                mergedProvider,
+              );
               const imageModelId = resolveSelectedModel(state.imageModelId, models);
               if (imageModelId) {
                 return { ...base, imageModelId };
@@ -1093,7 +1161,10 @@ export const useSettingsStore = create<SettingsState>()(
             videoProviderId: providerId,
             videoModelId: resolveSelectedModel(
               state.videoModelId,
-              VIDEO_PROVIDERS[providerId]?.models ?? [],
+              resolveMediaModels(
+                VIDEO_PROVIDERS[providerId]?.models ?? [],
+                state.videoProvidersConfig[providerId],
+              ),
             ),
           })),
         setVideoModelId: (modelId) => set({ videoModelId: modelId }),
@@ -1109,13 +1180,36 @@ export const useSettingsStore = create<SettingsState>()(
               [providerId]: mergedProvider,
             };
             const base = { videoProvidersConfig };
-            // Atomic invariant (#580): symmetric with image — a config edit on
-            // the active video provider must not leave videoModelId stale.
             if (state.videoProviderId === providerId) {
-              const models = [
-                ...(VIDEO_PROVIDERS[providerId]?.models ?? []),
-                ...(mergedProvider.customModels ?? []),
-              ];
+              // Symmetric with image: disabling the active provider switches the
+              // selection back to the default so nothing keeps pointing at a
+              // disabled provider with an empty key.
+              if (config.enabled === false) {
+                const providerIds = Object.keys(VIDEO_PROVIDERS) as VideoProviderId[];
+                const usableFallback = providerIds.find(
+                  (id) =>
+                    id !== providerId &&
+                    isUsableMediaProvider(VIDEO_PROVIDERS[id], videoProvidersConfig[id]),
+                );
+                const fallback =
+                  usableFallback ?? providerIds.find((id) => id !== providerId) ?? providerId;
+                const fallbackModels = resolveMediaModels(
+                  VIDEO_PROVIDERS[fallback]?.models ?? [],
+                  videoProvidersConfig[fallback],
+                );
+                return {
+                  ...base,
+                  videoProviderId: fallback,
+                  videoModelId: resolveSelectedModel(state.videoModelId, fallbackModels),
+                  ...(!usableFallback ? { videoGenerationEnabled: false } : {}),
+                };
+              }
+              // Atomic invariant (#580): symmetric with image — a config edit on
+              // the active video provider must not leave videoModelId stale.
+              const models = resolveMediaModels(
+                VIDEO_PROVIDERS[providerId]?.models ?? [],
+                mergedProvider,
+              );
               const videoModelId = resolveSelectedModel(state.videoModelId, models);
               if (videoModelId) {
                 return { ...base, videoModelId };
@@ -1213,15 +1307,24 @@ export const useSettingsStore = create<SettingsState>()(
         // Web Search actions
         setWebSearchProvider: (providerId) => set({ webSearchProviderId: providerId }),
         setWebSearchProviderConfig: (providerId, config) =>
-          set((state) => ({
-            webSearchProvidersConfig: {
+          set((state) => {
+            const webSearchProvidersConfig = {
               ...state.webSearchProvidersConfig,
               [providerId]: {
                 ...state.webSearchProvidersConfig[providerId],
                 ...config,
               },
-            },
-          })),
+            };
+            // Disabling the active provider switches the selection back to the
+            // default so web search doesn't keep pointing at a disabled provider.
+            if (state.webSearchProviderId === providerId && config.enabled === false) {
+              return {
+                webSearchProvidersConfig,
+                webSearchProviderId: getDefaultWebSearchConfig().webSearchProviderId,
+              };
+            }
+            return { webSearchProvidersConfig };
+          }),
         setBaiduSubSources: (sources) =>
           set((state) => {
             const next = {
@@ -1275,9 +1378,27 @@ export const useSettingsStore = create<SettingsState>()(
                   const currentModels = newProvidersConfig[key].models;
                   // When server specifies allowed models, filter the models list
                   // while preserving custom IDs from env/YAML in server order.
-                  const currentModelMap = new Map(currentModels.map((m) => [m.id, m]));
                   const filteredModels = info.models?.length
-                    ? info.models.map((id) => currentModelMap.get(id) ?? { id, name: id })
+                    ? info.models.map((id) => {
+                        const currentModel = findModelById(key, currentModels, id);
+                        const builtInModel = findModelById(key, PROVIDERS[key]?.models, id);
+                        const model =
+                          currentModel && builtInModel
+                            ? {
+                                ...builtInModel,
+                                ...currentModel,
+                                name:
+                                  currentModel.name === currentModel.id
+                                    ? builtInModel.name
+                                    : currentModel.name,
+                                capabilities: {
+                                  ...builtInModel.capabilities,
+                                  ...currentModel.capabilities,
+                                },
+                              }
+                            : (currentModel ?? builtInModel);
+                        return model ? { ...model, id, name: model.name || id } : { id, name: id };
+                      })
                     : currentModels;
                   newProvidersConfig[key] = {
                     ...newProvidersConfig[key],
@@ -1442,7 +1563,7 @@ export const useSettingsStore = create<SettingsState>()(
               const pdfFallback = buildFallback<PDFProviderId>(newPDFConfig);
               const imageFallback = buildFallback<ImageProviderId>(newImageConfig);
               const videoFallback = buildFallback<VideoProviderId>(newVideoConfig);
-              const webSearchFallback = buildFallback<WebSearchProviderId>(newWebSearchConfig);
+              const webSearchFallback = buildWebSearchFallbackOrder(newWebSearchConfig);
 
               let validLLMProvider = validateProvider(
                 state.providerId,
@@ -1505,15 +1626,23 @@ export const useSettingsStore = create<SettingsState>()(
                 ? (newProvidersConfig[validLLMProvider as ProviderId]?.models ?? [])
                 : [];
               const validLLMModel = validLLMProvider
-                ? resolveSelectedModel(state.modelId, llmModels)
+                ? resolveSelectedLLMModel(validLLMProvider as ProviderId, state.modelId, llmModels)
                 : '';
-              const imageModels =
-                IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models ?? [];
+              const imageModels = validImageProvider
+                ? resolveMediaModels(
+                    IMAGE_PROVIDERS[validImageProvider as ImageProviderId]?.models ?? [],
+                    newImageConfig[validImageProvider as ImageProviderId],
+                  )
+                : [];
               const validImageModel = validImageProvider
                 ? resolveSelectedModel(state.imageModelId, imageModels)
                 : '';
-              const videoModels =
-                VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models ?? [];
+              const videoModels = validVideoProvider
+                ? resolveMediaModels(
+                    VIDEO_PROVIDERS[validVideoProvider as VideoProviderId]?.models ?? [],
+                    newVideoConfig[validVideoProvider as VideoProviderId],
+                  )
+                : [];
               const validVideoModel = validVideoProvider
                 ? resolveSelectedModel(state.videoModelId, videoModels)
                 : '';
@@ -1695,7 +1824,18 @@ export const useSettingsStore = create<SettingsState>()(
     },
     {
       name: 'settings-storage',
-      version: 4,
+      // `Partial<SettingsState>` because `migrate` below returns a partial —
+      // that is what zustand infers as the persisted shape here.
+      storage: createKVPersistStorage<Partial<SettingsState>>('account', {
+        // One recovery attempt when a write is refused because hydration never
+        // succeeded — the backend may have come back since. Routed through a
+        // variable assigned below rather than naming the store directly: a
+        // self-reference here would make the store's own type circular, and
+        // every `useSettingsStore(s => ...)` selector would silently widen to
+        // `any`.
+        onWriteRefused: () => recovery.rehydrate?.(),
+      }),
+      version: SETTINGS_PERSIST_VERSION,
       // Migrate persisted state
       migrate: (persistedState: unknown, version: number) => {
         const state = persistedState as Partial<SettingsState>;
@@ -1714,6 +1854,7 @@ export const useSettingsStore = create<SettingsState>()(
         // Ensure image/video configs have all built-in providers
         ensureBuiltInImageProviders(state);
         ensureBuiltInVideoProviders(state);
+        ensureBuiltInPDFProviders(state);
 
         // Migrate from old ttsModel to new ttsProviderId
         if (state.ttsModel && !state.ttsProviderId) {
@@ -1863,6 +2004,18 @@ export const useSettingsStore = create<SettingsState>()(
               enabled: true,
               requiresApiKey: true,
             },
+            doubao: {
+              apiKey: '',
+              baseUrl: WEB_SEARCH_PROVIDERS.doubao.defaultBaseUrl || '',
+              enabled: true,
+              requiresApiKey: true,
+            },
+            searxng: {
+              apiKey: '',
+              baseUrl: '',
+              enabled: true,
+              requiresApiKey: false,
+            },
           } as SettingsState['webSearchProvidersConfig'];
           delete stateRecord.webSearchApiKey;
           delete stateRecord.webSearchIsServerConfigured;
@@ -1894,12 +2047,18 @@ export const useSettingsStore = create<SettingsState>()(
       // Custom merge: always sync built-in providers on every rehydrate,
       // so newly added providers/models appear without clearing cache.
       merge: (persistedState, currentState) => {
-        const merged = { ...currentState, ...(persistedState as object) };
+        // The insert toolbar is draggable and no longer collapses. Sanitize
+        // this retired property on every rehydrate instead of bumping the
+        // storage version and replaying unrelated legacy migrations.
+        const persisted = { ...(persistedState as object) } as Record<string, unknown>;
+        delete persisted.editInsertToolbarCollapsed;
+        const merged = { ...currentState, ...persisted };
         ensureBuiltInProviders(merged as Partial<SettingsState>);
         promoteLegacyCustomProviderBaseUrls(merged as Partial<SettingsState>);
         ensureBuiltInAudioProviders(merged as Partial<SettingsState>);
         ensureBuiltInImageProviders(merged as Partial<SettingsState>);
         ensureBuiltInVideoProviders(merged as Partial<SettingsState>);
+        ensureBuiltInPDFProviders(merged as Partial<SettingsState>);
         ensureBuiltInWebSearchProviders(merged as Partial<SettingsState>);
         ensureValidProviderSelections(merged as Partial<SettingsState>);
         stripLegacyServerBaseUrl(merged as Partial<SettingsState>);
@@ -1913,3 +2072,13 @@ export const useSettingsStore = create<SettingsState>()(
     },
   ),
 );
+
+// Bound after the store exists so the `onWriteRefused` hook above stays free of
+// a self-reference (see the comment there).
+recovery.rehydrate = () => useSettingsStore.persist.rehydrate();
+
+// Best-effort, fire-and-forget: drop the pre-cutover raw `localStorage` blob.
+// It is never read (this store does not migrate legacy data), and the old blob
+// holds plaintext provider API keys, so clearing it is a small security win. No
+// correctness depends on it.
+purgeLegacyPersistKey('settings-storage');

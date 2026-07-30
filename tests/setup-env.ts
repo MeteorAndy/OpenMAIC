@@ -4,6 +4,16 @@
 import { readFileSync } from 'fs';
 import { resolve } from 'path';
 
+// Node 24 exposes a native navigator.locks. Tests target the browser fallback
+// unless they inject a lock manager explicitly.
+if (
+  typeof window === 'undefined' &&
+  typeof navigator !== 'undefined' &&
+  navigator.userAgent.startsWith('Node.js')
+) {
+  Object.defineProperty(navigator, 'locks', { value: undefined, configurable: true });
+}
+
 const envPath = resolve(__dirname, '..', '.env.local');
 try {
   const content = readFileSync(envPath, 'utf-8');

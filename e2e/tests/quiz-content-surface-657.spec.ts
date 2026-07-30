@@ -23,16 +23,23 @@ const SETTINGS_STORAGE = createSettingsStorage({ sidebarCollapsed: false });
  */
 async function seedQuiz(page: Page, stageId: string, questions: QuizQuestion[]) {
   await page.addInitScript((settings) => {
-    localStorage.setItem('settings-storage', settings);
+    localStorage.setItem('maic:account:settings-storage', settings);
   }, SETTINGS_STORAGE);
   await page.goto('/', { waitUntil: 'networkidle' });
   await page.evaluate(
     ({ id, qs }) => {
       return new Promise<void>((resolve, reject) => {
-        const request = indexedDB.open('MAIC-Database');
+        const request = indexedDB.open('maic-documents', 1);
+        request.onupgradeneeded = () => {
+          const db = request.result;
+          db.createObjectStore('stages', { keyPath: 'id' });
+          const scenes = db.createObjectStore('scenes', { keyPath: ['stageId', 'id'] });
+          scenes.createIndex('by-stage', 'stageId');
+          db.createObjectStore('outlines', { keyPath: 'stageId' });
+        };
         request.onsuccess = (event) => {
           const db = (event.target as IDBOpenDBRequest).result;
-          const tx = db.transaction(['stages', 'scenes', 'stageOutlines'], 'readwrite');
+          const tx = db.transaction(['stages', 'scenes', 'outlines'], 'readwrite');
           const now = Date.now();
           tx.objectStore('stages').put({
             id,
@@ -42,6 +49,7 @@ async function seedQuiz(page: Page, stageId: string, questions: QuizQuestion[]) 
             style: 'professional',
             createdAt: now,
             updatedAt: now,
+            dslVersion: '0.1.0',
           });
           tx.objectStore('scenes').put({
             id: 'scene-quiz',
@@ -53,11 +61,9 @@ async function seedQuiz(page: Page, stageId: string, questions: QuizQuestion[]) 
             createdAt: now,
             updatedAt: now,
           });
-          tx.objectStore('stageOutlines').put({
+          tx.objectStore('outlines').put({
             stageId: id,
-            outlines: [],
-            createdAt: now,
-            updatedAt: now,
+            outline: { outlines: [], createdAt: now, updatedAt: now },
           });
           tx.oncomplete = () => {
             db.close();
@@ -99,7 +105,7 @@ test.describe('Quiz content surface (#657)', () => {
     const cards = page.getByTestId('quiz-question');
     await expect(cards).toHaveCount(1);
 
-    // Add one of every type via the chrome's "Add question" insert item.
+    // Add one of every type via the inline "Add question" action.
     const addType = async (name: string) => {
       await page.getByRole('button', { name: 'Add question' }).click();
       await page.getByRole('button', { name, exact: true }).click();
