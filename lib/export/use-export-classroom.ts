@@ -9,6 +9,7 @@ import { getCourse, getGeneratedAgents } from '@/lib/supabase/queries';
 import {
   CLASSROOM_ZIP_FORMAT_VERSION,
   CLASSROOM_ZIP_EXTENSION,
+  manifestAgentFromConfig,
   type ClassroomManifest,
   type ManifestStage,
   type ManifestAgent,
@@ -26,6 +27,7 @@ import {
 } from './inline-assets';
 import { createProxiedFetch } from './proxied-fetch';
 import type { SceneContent } from '@/lib/types/stage';
+import { preparePBLScenesForDocumentPersistence } from '@/lib/pbl/v2/runtime/document-persistence';
 
 export async function inlineSceneContent(
   content: SceneContent,
@@ -54,13 +56,14 @@ export function useExportClassroom() {
     try {
       const JSZip = (await import('jszip')).default;
       const zip = new JSZip();
+      const documentScenes = await preparePBLScenesForDocumentPersistence(stage.id, scenes);
 
       // 1. Read latest stage name from Supabase (may have been renamed on home page)
       const got = await getCourse(stage.id);
       const latestName = got?.stage.name || stage.name;
 
       // 2. Collect agents from Supabase
-      const agentRecords = await getGeneratedAgents(stage.id);
+      const agentConfigs = await getGeneratedAgents(stage.id);
 
       // 3. Collect audio files
       const audioFiles = await collectAudioFiles(scenes);
@@ -84,40 +87,16 @@ export function useExportClassroom() {
         updatedAt: stage.updatedAt,
       };
 
-      const manifestAgents: ManifestAgent[] = agentRecords.map((a) => ({
-        name: a.name,
-        role: a.role,
-        persona: a.persona,
-        avatar: a.avatar,
-        color: a.color,
-        priority: a.priority,
-      }));
-
-      // Also include generatedAgentConfigs from stage if agents not in DB
-      if (manifestAgents.length === 0 && stage.generatedAgentConfigs?.length) {
-        for (const a of stage.generatedAgentConfigs) {
-          manifestAgents.push({
-            name: a.name,
-            role: a.role,
-            persona: a.persona,
-            avatar: a.avatar,
-            color: a.color,
-            priority: a.priority,
-          });
-        }
-      }
+      const manifestAgents: ManifestAgent[] = agentConfigs.map(manifestAgentFromConfig);
 
       // Build agent ID → index mapping for multiAgent references
       const agentIdToIndex = new Map<string, number>();
-      agentRecords.forEach((a, i) => agentIdToIndex.set(a.id, i));
-      if (stage.generatedAgentConfigs?.length && agentRecords.length === 0) {
-        stage.generatedAgentConfigs.forEach((a, i) => agentIdToIndex.set(a.id, i));
-      }
+      agentConfigs.forEach((a, i) => agentIdToIndex.set(a.id, i));
 
       const aggregateReport: InlineReport = { inlined: [], failed: [] };
       const sharedFetcher = createAssetFetcher({ fetchImpl: createProxiedFetch() });
       const manifestScenes: ManifestScene[] = await Promise.all(
-        scenes.map(async (scene) => {
+        documentScenes.map(async (scene) => {
           const { content, report } = await inlineSceneContent(scene.content, {
             fetcher: sharedFetcher,
           });

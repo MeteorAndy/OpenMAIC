@@ -26,6 +26,7 @@ import { llmApiError } from '@/lib/server/llm-error-response';
 import { resolveModelFromRequest } from '@/lib/server/resolve-model';
 import { resolveVocationalActive } from '@/lib/config/feature-flags';
 import { requireUserWithQuota, recordGeneration } from '@/lib/server/quota';
+import { sortDocumentImagesForVision } from '@/lib/document/bundle';
 
 const log = createLogger('Scene Content API');
 
@@ -156,7 +157,9 @@ export async function POST(req: NextRequest) {
       effectiveOutline.suggestedImageIds.length > 0
     ) {
       const suggestedIds = new Set(effectiveOutline.suggestedImageIds);
-      assignedImages = pdfImages.filter((img) => suggestedIds.has(img.id));
+      assignedImages = sortDocumentImagesForVision(
+        pdfImages.filter((img) => suggestedIds.has(img.id)),
+      );
     }
 
     // ── Media generation is handled client-side in parallel (media-orchestrator.ts) ──

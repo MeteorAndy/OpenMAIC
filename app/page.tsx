@@ -36,9 +36,14 @@ import { GenerationToolbar } from '@/components/generation/generation-toolbar';
 import { AgentBar } from '@/components/agent/agent-bar';
 import { useTheme } from '@/lib/hooks/use-theme';
 import { nanoid } from 'nanoid';
-import { storePdfBlob } from '@/lib/utils/image-storage';
+import { deleteDocumentBlob, storeDocumentBlob } from '@/lib/utils/image-storage';
 import { normalizeDocumentMimeType } from '@/lib/document/mime';
-import type { UserRequirements } from '@/lib/types/generation';
+import { dedupeCourseMaterialFiles } from '@/lib/document/course-materials';
+import type {
+  SelectedCourseMaterial,
+  SessionDocumentSource,
+  UserRequirements,
+} from '@/lib/types/generation';
 import { useSettingsStore } from '@/lib/store/settings';
 import { hasUsableLLMProvider } from '@/lib/store/settings-validation';
 import { useUserProfileStore, AVATAR_OPTIONS } from '@/lib/store/user-profile';
@@ -58,9 +63,10 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { useDraftCache } from '@/lib/hooks/use-draft-cache';
 import { SpeechButton } from '@/components/audio/speech-button';
 import { useImportClassroom } from '@/lib/import/use-import-classroom';
-import { shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
+import { isPptxImportEnabled, shouldShowVocationalTestUi } from '@/lib/config/feature-flags';
 import { useImportPptx } from '@/lib/import/use-import-pptx';
 import { useCourseRealtime } from '@/lib/supabase/realtime';
+import { InteractiveModeButton } from '@/components/generation/interactive-mode-button';
 
 const log = createLogger('Home');
 
@@ -71,11 +77,10 @@ const INTERACTIVE_MODE_STORAGE_KEY = 'interactiveModeEnabled';
 // PPTX import is still scaffolding: `useImportPptx` has no `onImported` consumer
 // yet, so the flow only logs the parsed slides. Hide the entry point behind a
 // flag until it's wired end-to-end, so the UI doesn't expose a no-op button.
-// Enable with NEXT_PUBLIC_ENABLE_PPTX_IMPORT=true.
-const PPTX_IMPORT_ENABLED = process.env.NEXT_PUBLIC_ENABLE_PPTX_IMPORT === 'true';
+const PPTX_IMPORT_ENABLED = isPptxImportEnabled();
 
 interface FormState {
-  pdfFile: File | null;
+  courseMaterials: SelectedCourseMaterial[];
   requirement: string;
   webSearch: boolean;
   interactiveMode: boolean;
@@ -83,7 +88,7 @@ interface FormState {
 }
 
 const initialFormState: FormState = {
-  pdfFile: null,
+  courseMaterials: [],
   requirement: '',
   webSearch: false,
   interactiveMode: false,
@@ -121,7 +126,6 @@ function HomePage() {
   };
 
   // Hydrate client-only state after mount (avoids SSR mismatch)
-  /* eslint-disable react-hooks/set-state-in-effect -- Hydration from localStorage must happen in effect */
   useEffect(() => {
     try {
       const saved = localStorage.getItem(RECENT_OPEN_STORAGE_KEY);
@@ -142,21 +146,18 @@ function HomePage() {
       /* localStorage unavailable */
     }
   }, []);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   // Restore requirement draft from localStorage on mount. The previous derived-state
   // pattern initialised `prev` from the cached value itself, so on the first client
   // render the comparison was always equal and the restore never fired. Use an effect
   // so the cache is hydrated into the form once we know the live requirement is empty.
   const draftRestoredRef = useRef(false);
-  /* eslint-disable react-hooks/set-state-in-effect -- Hydration from localStorage must happen in effect */
   useEffect(() => {
     if (draftRestoredRef.current) return;
     if (!cachedRequirement) return;
     draftRestoredRef.current = true;
     setForm((prev) => (prev.requirement ? prev : { ...prev, requirement: cachedRequirement }));
   }, [cachedRequirement]);
-  /* eslint-enable react-hooks/set-state-in-effect */
 
   const [themeOpen, setThemeOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -203,6 +204,7 @@ function HomePage() {
       }
     } catch (err) {
       log.error('Failed to load classrooms:', err);
+      toast.error('Persistence is unavailable. Saved classrooms could not be loaded.');
     }
   };
 
@@ -230,7 +232,6 @@ function HomePage() {
     useMediaGenerationStore.getState().revokeObjectUrls();
     useMediaGenerationStore.setState({ tasks: {} });
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- Store hydration on mount
     loadClassrooms();
 
     return () => {
@@ -288,6 +289,35 @@ function HomePage() {
     }
   };
 
+  const addCourseMaterials = (files: File[]) => {
+    setForm((prev) => {
+      const dedupedFiles = dedupeCourseMaterialFiles(prev.courseMaterials, files);
+      const startOrder = prev.courseMaterials.length + 1;
+      const additions = dedupedFiles.map((file, index) => ({
+        id: nanoid(8),
+        file,
+        name: file.name,
+        size: file.size,
+        lastModified: file.lastModified,
+        type: file.type,
+        order: startOrder + index,
+      }));
+
+      return additions.length > 0
+        ? { ...prev, courseMaterials: [...prev.courseMaterials, ...additions] }
+        : prev;
+    });
+  };
+
+  const removeCourseMaterial = (id: string) => {
+    setForm((prev) => ({
+      ...prev,
+      courseMaterials: prev.courseMaterials
+        .filter((item) => item.id !== id)
+        .map((item, index) => ({ ...item, order: index + 1 })),
+    }));
+  };
+
   const handleGenerate = async () => {
     // No model/provider guard here: generation is gated by `canGenerate`
     // (requires a usable provider), and under the #580 invariant a usable
@@ -311,20 +341,13 @@ function HomePage() {
         ...(form.vocationalTestMode ? { taskEngineMode: true } : {}),
       };
 
-      let pdfStorageKey: string | undefined;
-      let pdfFileName: string | undefined;
-      let documentMimeType: string | undefined;
+      let documentSources: SessionDocumentSource[] | undefined;
       let pdfProviderId: string | undefined;
-      let pdfProviderConfig: { apiKey?: string; baseUrl?: string } | undefined;
+      let pdfProviderConfig:
+        | { apiKey?: string; baseUrl?: string; accessKeyId?: string; accessKeySecret?: string }
+        | undefined;
 
-      if (form.pdfFile) {
-        pdfStorageKey = await storePdfBlob(form.pdfFile);
-        pdfFileName = form.pdfFile.name;
-        documentMimeType = normalizeDocumentMimeType({
-          mimeType: form.pdfFile.type,
-          fileName: form.pdfFile.name,
-        });
-
+      if (form.courseMaterials.length > 0) {
         const settings = useSettingsStore.getState();
         pdfProviderId = settings.pdfProviderId;
         const providerCfg = settings.pdfProvidersConfig?.[settings.pdfProviderId];
@@ -332,7 +355,35 @@ function HomePage() {
           pdfProviderConfig = {
             apiKey: providerCfg.apiKey,
             baseUrl: providerCfg.baseUrl,
+            accessKeyId: providerCfg.accessKeyId,
+            accessKeySecret: providerCfg.accessKeySecret,
           };
+        }
+
+        const storedDocumentKeys: string[] = [];
+        try {
+          documentSources = [];
+          const orderedMaterials = [...form.courseMaterials].sort((a, b) => a.order - b.order);
+          for (const [index, item] of orderedMaterials.entries()) {
+            const storageKey = await storeDocumentBlob(item.file);
+            storedDocumentKeys.push(storageKey);
+            documentSources.push({
+              id: item.id,
+              name: item.name,
+              size: item.size,
+              lastModified: item.lastModified,
+              mimeType: normalizeDocumentMimeType({
+                mimeType: item.file.type,
+                fileName: item.file.name,
+              }),
+              order: index + 1,
+              storageKey,
+              providerId: pdfProviderId,
+            });
+          }
+        } catch (error) {
+          await Promise.allSettled(storedDocumentKeys.map((key) => deleteDocumentBlob(key)));
+          throw error;
         }
       }
 
@@ -342,9 +393,11 @@ function HomePage() {
         pdfText: '',
         pdfImages: [],
         imageStorageIds: [],
-        pdfStorageKey,
-        pdfFileName,
-        documentMimeType,
+        documentSources,
+        // Backward-compatible single-document fields for previously saved sessions.
+        pdfStorageKey: documentSources?.[0]?.storageKey,
+        pdfFileName: documentSources?.[0]?.name,
+        documentMimeType: documentSources?.[0]?.mimeType,
         pdfProviderId,
         pdfProviderConfig,
         sceneOutlines: null,
@@ -573,8 +626,9 @@ function HomePage() {
                     setSettingsSection(section);
                     setSettingsOpen(true);
                   }}
-                  pdfFile={form.pdfFile}
-                  onPdfFileChange={(f) => updateForm('pdfFile', f)}
+                  courseMaterials={form.courseMaterials}
+                  onCourseMaterialsAdd={addCourseMaterials}
+                  onCourseMaterialRemove={removeCourseMaterial}
                   onPdfError={setError}
                 />
               </div>
@@ -582,28 +636,11 @@ function HomePage() {
               {/* Interactive mode toggle */}
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <motion.button
-                    whileTap={{ scale: 0.95 }}
-                    transition={{ type: 'spring', stiffness: 400, damping: 17 }}
-                    onClick={() => updateForm('interactiveMode', !form.interactiveMode)}
-                    className={cn(
-                      'relative inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium transition-all cursor-pointer select-none whitespace-nowrap border shrink-0 h-8',
-                      form.interactiveMode
-                        ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300 border-cyan-500 shadow-[0_0_12px_rgba(6,182,212,0.35)] dark:shadow-[0_0_12px_rgba(6,182,212,0.25)]'
-                        : 'border-cyan-300/60 text-cyan-600 dark:text-cyan-400 hover:bg-cyan-50 dark:hover:bg-cyan-900/20',
-                    )}
-                  >
-                    {form.interactiveMode && (
-                      <span
-                        className="absolute inset-[-4px] rounded-full border border-cyan-400/40 dark:border-cyan-400/25"
-                        style={{
-                          animation: 'interactive-mode-breathe 2s ease-in-out infinite',
-                        }}
-                      />
-                    )}
-                    <Atom className="size-3.5 relative z-10 animate-[spin_3s_linear_infinite]" />
-                    <span className="relative z-10">{t('toolbar.interactiveModeLabel')}</span>
-                  </motion.button>
+                  <InteractiveModeButton
+                    pressed={form.interactiveMode}
+                    label={t('toolbar.interactiveModeLabel')}
+                    onPressedChange={(pressed) => updateForm('interactiveMode', pressed)}
+                  />
                 </TooltipTrigger>
                 <TooltipContent side="top" className="text-xs">
                   {t('toolbar.interactiveModeHint')}

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { getProvider } from '@/lib/ai/providers';
 import {
+  getThinkingConfigKey,
   getDefaultThinkingConfig,
   getThinkingDisplayValue,
   normalizeThinkingConfig,
@@ -84,6 +85,9 @@ describe('thinking config metadata', () => {
     expect(glmModels).not.toContain('glm-4.5-air');
     expect(glmModels).not.toContain('glm-4.5-airx');
     expect(glmModels).not.toContain('glm-4.5-flash');
+    expect(googleModels).toEqual(
+      expect.arrayContaining(['gemini-3.6-flash', 'gemini-3.5-flash-lite']),
+    );
     expect(googleModels).toContain('gemini-3.1-pro-preview');
     expect(googleModels).not.toContain('gemini-3-pro-preview');
     expect(deepseekModels).toEqual(['deepseek-v4-pro', 'deepseek-v4-flash']);
@@ -94,6 +98,11 @@ describe('thinking config metadata', () => {
 });
 
 describe('thinking config normalization', () => {
+  it('shares one settings key between GPT-5.6 Sol and its alias', () => {
+    expect(getThinkingConfigKey('openai', 'gpt-5.6-sol')).toBe('openai:gpt-5.6');
+    expect(getThinkingConfigKey('openai', 'gpt-5.6')).toBe('openai:gpt-5.6');
+  });
+
   it('normalizes OpenAI effort defaults and selected effort values', () => {
     const thinking = getThinking('openai', 'gpt-5.4');
 
@@ -106,6 +115,27 @@ describe('thinking config normalization', () => {
       effort: 'high',
     });
   });
+
+  it.each(['gpt-5.6', 'gpt-5.6-terra', 'gpt-5.6-luna'])(
+    'normalizes %s with medium default and max effort',
+    (modelId) => {
+      const thinking = getThinking('openai', modelId);
+
+      expect(getDefaultThinkingConfig(thinking)).toEqual({
+        mode: 'enabled',
+        effort: 'medium',
+      });
+      expect(normalizeThinkingConfig(thinking, { mode: 'disabled' })).toEqual({
+        mode: 'disabled',
+        effort: 'none',
+      });
+      expect(normalizeThinkingConfig(thinking, { effort: 'max' })).toEqual({
+        mode: 'enabled',
+        effort: 'max',
+      });
+      expect(thinking?.effortValues).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
+    },
+  );
 
   it('normalizes GPT-5.5 as non-toggleable effort levels', () => {
     const thinking = getThinking('openai', 'gpt-5.5');
@@ -140,6 +170,63 @@ describe('thinking config normalization', () => {
     });
     expect(opus48Thinking?.effortValues).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
     expect(opus47Thinking?.effortValues).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
+  });
+
+  it('models Claude 5 defaults and Fable always-on thinking', () => {
+    const fableThinking = getThinking('anthropic', 'claude-fable-5');
+    const opusThinking = getThinking('anthropic', 'claude-opus-5');
+    const sonnetThinking = getThinking('anthropic', 'claude-sonnet-5');
+
+    expect(getDefaultThinkingConfig(fableThinking)).toEqual({
+      mode: 'enabled',
+      effort: 'high',
+    });
+    expect(normalizeThinkingConfig(fableThinking, { mode: 'disabled' })).toEqual({
+      mode: 'enabled',
+      effort: 'low',
+    });
+    expect(fableThinking).toMatchObject({
+      toggleable: false,
+      budgetAdjustable: false,
+    });
+    expect(getDefaultThinkingConfig(opusThinking)).toEqual({
+      mode: 'enabled',
+      effort: 'high',
+    });
+    expect(getDefaultThinkingConfig(sonnetThinking)).toEqual({
+      mode: 'enabled',
+      effort: 'high',
+    });
+    expect(opusThinking?.effortValues).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
+    expect(sonnetThinking?.effortValues).toEqual(['none', 'low', 'medium', 'high', 'xhigh', 'max']);
+  });
+
+  it('models the latest Gemini, Kimi, and Grok reasoning controls', () => {
+    const geminiFlashThinking = getThinking('google', 'gemini-3.6-flash');
+    const geminiLiteThinking = getThinking('google', 'gemini-3.5-flash-lite');
+    const kimiThinking = getThinking('kimi', 'kimi-k3');
+    const grokThinking = getThinking('grok', 'grok-4.5');
+
+    expect(getDefaultThinkingConfig(geminiFlashThinking)).toEqual({
+      mode: 'enabled',
+      level: 'medium',
+    });
+    expect(getDefaultThinkingConfig(geminiLiteThinking)).toEqual({
+      mode: 'enabled',
+      level: 'minimal',
+    });
+    expect(getDefaultThinkingConfig(kimiThinking)).toEqual({
+      mode: 'enabled',
+      effort: 'max',
+    });
+    expect(normalizeThinkingConfig(kimiThinking, { mode: 'disabled' })).toEqual({
+      mode: 'enabled',
+      effort: 'low',
+    });
+    expect(getDefaultThinkingConfig(grokThinking)).toEqual({
+      mode: 'enabled',
+      effort: 'high',
+    });
   });
 
   it('normalizes DeepSeek V4 thinking as high/max effort levels', () => {

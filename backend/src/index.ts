@@ -15,6 +15,9 @@ import { cors } from 'hono/cors';
 import { health } from './routes/health';
 import { quota } from './routes/quota';
 import { chat } from './routes/chat';
+import { piChatRoute } from './routes/pi-chat';
+import { videoExportRoute } from './routes/video-export';
+import { persistenceRoute } from './routes/persistence';
 // generate/*
 import { generateImageRoute } from './routes/generate-image';
 import { generateTtsRoute } from './routes/generate-tts';
@@ -83,7 +86,7 @@ app.use(
       'x-base-url',
       'x-provider-type',
     ],
-    allowMethods: ['GET', 'POST', 'OPTIONS'],
+    allowMethods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
   }),
 );
 
@@ -91,6 +94,9 @@ app.use(
 app.route('/api/health', health);
 app.route('/api/quota', quota);
 app.route('/api/chat', chat);
+app.route('/api/chat/pi', piChatRoute);
+app.route('/api/export-video', videoExportRoute);
+app.route('/api/persistence', persistenceRoute);
 
 // generate/*
 app.route('/api/generate/image', generateImageRoute);
@@ -142,13 +148,24 @@ app.route('/api/billing', billingRoute);
 app.route('/api/admin', adminRoute);
 
 app.notFound((c) =>
-  c.json({ success: false, errorCode: 'NOT_FOUND', error: `Route ${c.req.method} ${c.req.path} not found` }, 404),
+  c.json(
+    {
+      success: false,
+      errorCode: 'NOT_FOUND',
+      error: `Route ${c.req.method} ${c.req.path} not found`,
+    },
+    404,
+  ),
 );
 
 app.onError((err, c) => {
   console.error('[backend] unhandled error:', err);
   return c.json(
-    { success: false, errorCode: 'INTERNAL_ERROR', error: err instanceof Error ? err.message : 'Internal error' },
+    {
+      success: false,
+      errorCode: 'INTERNAL_ERROR',
+      error: err instanceof Error ? err.message : 'Internal error',
+    },
     500,
   );
 });

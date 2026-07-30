@@ -15,6 +15,8 @@
     "removePdf": "Удалить файл",
     "documentExtractor": "Экстрактор",
     "courseMaterialUpload": "Загрузить материал курса",
+    "courseMaterialsSelected": "Выбрано материалов: {{n}}",
+    "courseMaterialMergeOrder": "Материалы объединяются в порядке, показанном ниже.",
     "removeCourseMaterial": "Удалить файл",
     "webSearchOn": "Включено",
     "webSearchOff": "Нажмите для включения",
@@ -49,7 +51,41 @@
     "exportFailed": "Ошибка экспорта",
     "classroomZip": "Экспорт ZIP класса",
     "classroomZipDesc": "Структура курса + медиафайлы",
-    "inlinePartial": "Не удалось упаковать {{count}} внешн. ресурс(ов); курс может отображаться некорректно офлайн."
+    "inlinePartial": "Не удалось упаковать {{count}} внешн. ресурс(ов); курс может отображаться некорректно офлайн.",
+    "video": "Экспорт видео",
+    "videoDesc": "Автономный проект Hyperframes (рендеринг в MP4)",
+    "videoNoScenes": "Нет сцен для экспорта.",
+    "videoCompiling": "Компиляция видеошкалы...",
+    "videoRendering": "Рендеринг слайдов и сбор ресурсов...",
+    "videoPackaging": "Упаковка видеопроекта...",
+    "videoSuccess": "Видеопроект экспортирован",
+    "videoFailed": "Ошибка экспорта видео",
+    "videoWarnings": "Отсутствует ресурсов: {{assets}}; проблем в отчёте об экспорте: {{diagnostics}}.",
+    "videoMp4Success": "Видео отрендерено",
+    "videoServiceUnavailable": "Сервис рендеринга не настроен — ZIP проекта загружен для локального рендеринга.",
+    "videoResolution": "Разрешение",
+    "videoFps": "Частота кадров",
+    "videoQuality": "Качество",
+    "videoQuality_draft": "Черновик",
+    "videoQuality_standard": "Стандарт",
+    "videoQuality_high": "Высокое",
+    "videoProgress": "{{percent}}%",
+    "videoProgressWithEta": "{{percent}}% · осталось ~{{remaining}}",
+    "videoEtaMinSec": "{{min}} мин {{sec}} с",
+    "videoEtaSec": "{{sec}} с",
+    "videoRenderMp4": "Рендерить MP4",
+    "videoDownloadZip": "Скачать ZIP проекта",
+    "videoServiceHint": "Для рендеринга MP4 нужен сервис рендеринга. Скачайте ZIP для локального рендеринга.",
+    "videoBurnSubtitles": "Встроить субтитры",
+    "videoBurnSubtitlesDesc": "Выключено: экспортируйте чистое видео и добавьте файл субтитров в своём редакторе.",
+    "videoDownloadSubtitles": "Скачать субтитры (.srt)",
+    "subtitlesCompiling": "Компиляция субтитров...",
+    "subtitlesSuccess": "Субтитры скачаны",
+    "subtitlesEmpty": "Нет закадрового текста для субтитров",
+    "subtitlesFailed": "Не удалось скачать субтитры",
+    "noSlides": "Нет слайдов для экспорта",
+    "noSlidesSkipped": "В этом курсе нет слайдов — PPTX пропущен",
+    "nothingToExport": "Нет данных для экспорта"
   },
   "import": {
     "classroom": "Импорт класса",
@@ -79,6 +115,7 @@
     "unknown": "Неизвестно",
     "stopDiscussion": "Завершить обсуждение",
     "endQA": "Завершить вопросы и ответы",
+    "softClosing": "Продолжить обсуждение",
     "error": {
       "emptyAgentResponses": "Агенты вернули пустые ответы; обсуждение остановлено. Попробуйте ещё раз или проверьте настройки модели.",
       "streamInterrupted": "Поток данных неожиданно прервался; обсуждение не завершено. Попробуйте ещё раз."
@@ -204,8 +241,8 @@
     },
     "insert": {
       "textBox": "Текстовое поле",
-      "expandToolbar": "Показать инструменты вставки",
-      "collapseToolbar": "Скрыть инструменты вставки",
+      "dragToolbar": "Переместить инструменты вставки",
+      "dragToolbarKeyboard": "Переместить инструменты: нажмите Enter или пробел, затем используйте стрелки",
       "image": "Изображение",
       "imageDrop": "Перетащите изображение или нажмите, чтобы выбрать файл",
       "imageOr": "или вставьте URL изображения",
@@ -263,7 +300,7 @@
       "commentPromptLabel": "Указания по оценке",
       "commentPromptPlaceholder": "Как оценивать этот развёрнутый ответ?",
       "empty": "Пока нет вопросов",
-      "emptyHint": "Нажмите «Добавить вопрос» выше, чтобы создать первый.",
+      "emptyHint": "Нажмите «Добавить вопрос», чтобы создать первый.",
       "type": {
         "single": "Один выбор",
         "multiple": "Несколько вариантов",
@@ -326,6 +363,10 @@
         "fixHtml": {
           "examples": "«Кнопка запуска не работает», «Панели накладываются на мобильном»",
           "label": "Исправить ошибку на странице"
+        },
+        "elements": {
+          "label": "Подправить элементы",
+          "examples": "«Сделай заголовок синим и подними», «Уменьши эту фигуру»"
         }
       },
       "newConversation": "New conversation",
@@ -426,6 +467,14 @@
       "fixing": "Исправляю",
       "notFixed": "Не исправлено",
       "title": "Исправить интерактивную страницу"
+    },
+    "editElements": {
+      "title": "Правка элементов",
+      "editing": "Редактирование",
+      "applied": "Применено",
+      "notApplied": "Не применено",
+      "applyFailed": "Редактору не удалось применить изменение элемента. Ничего не изменено.",
+      "applyPartiallyFailed": "Редактору не удалось применить одно или несколько изменений. Другие изменения могли быть применены."
     }
   },
   "classroomComplete": {
@@ -498,6 +547,7 @@
     "noSpeechDetected": "Речь не обнаружена, попробуйте ещё раз",
     "discussionEnded": "Обсуждение завершено",
     "qaEnded": "Вопросы и ответы завершены",
+    "softClosing": "Продолжить обсуждение",
     "thinking": "Размышляет",
     "yourTurn": "Ваша очередь",
     "stopDiscussion": "Завершить обсуждение",
@@ -825,12 +875,14 @@
     "requirementPlaceholder": "Расскажите, что вы хотите изучить, например:\n\"Научи меня Python с нуля за 30 минут\"\n\"Объясни преобразование Фурье на доске\"\n\"Как играть в настольную игру Авалон\"",
     "requirementRequired": "Пожалуйста, укажите требования к курсу",
     "fileTooLarge": "Файл слишком большой. Выберите файл до 50 МБ",
+    "courseMaterialCountLimit": "Можно загрузить до 5 файлов материалов курса",
+    "courseMaterialTotalSizeLimit": "Общий размер материалов курса должен быть меньше 150 МБ",
     "unsupportedCourseMaterial": "Текущий парсер не поддерживает этот формат. Смените парсер или выберите другой файл."
   },
   "generation": {
     "pdfLoadFailed": "Не удалось загрузить PDF, попробуйте снова",
     "pdfParseFailed": "Ошибка обработки PDF",
-    "analyzingCourseMaterial": "Анализ файла {{type}}",
+    "analyzingCourseMaterial": "Анализ документов",
     "analyzingCourseMaterialDesc": "Извлечение структуры и содержимого документа...",
     "courseMaterialLoadFailed": "Не удалось загрузить материал курса, попробуйте снова",
     "courseMaterialParseFailed": "Ошибка обработки материала курса",
@@ -843,11 +895,6 @@
     "generatingActionsDesc": "Подготовка нарратива, внимания и взаимодействий...",
     "generationComplete": "Генерация завершена!",
     "generationFailed": "Ошибка генерации",
-    "generatingCourse": "Генерация курса",
-    "openingClassroom": "Открытие класса...",
-    "outlineReady": "Структура курса сгенерирована",
-    "generatingFirstPage": "Генерация первой страницы...",
-    "firstPageReady": "Первая страница готова! Открываю класс...",
     "speechFailed": "Ошибка генерации речи",
     "retryScene": "Повторить",
     "retryingScene": "Перегенерация...",
@@ -868,6 +915,10 @@
     "outlineEmptyResponse": "Модель не вернула валидную структуру. Проверьте настройки модели и попробуйте снова",
     "outlineGenerateFailed": "Ошибка генерации структуры, попробуйте позже",
     "sceneGenerateFailed": "Не удалось сгенерировать сцену, попробуйте позже",
+    "sceneGenerateAuthFailed": "Не удалось сгенерировать сцену: провайдер модели отклонил учетные данные. Проверьте настройки модели.",
+    "sceneGenerateRateLimited": "Генерация сцены ограничена лимитом запросов. Подождите немного и попробуйте снова.",
+    "sceneGenerateProviderUnavailable": "Провайдер модели временно недоступен. Попробуйте позже.",
+    "sceneGenerateInvalidResponse": "Модель не вернула корректное содержимое сцены. Попробуйте другую модель или измените требования курса.",
     "reviewOutlineTitle": "Проверьте план курса",
     "reviewOutlineDesc": "До создания содержимого можно редактировать, переставлять, удалять и добавлять сцены.",
     "reviewOutlineAutoContinue": "Если вы не откроете проверку, генерация содержимого продолжится автоматически.",
@@ -936,7 +987,8 @@
     "webSearchingDesc": "Поиск актуальной информации в сети",
     "webSearchFailed": "Ошибка веб-поиска",
     "outlinesReadyCount": "Готово разделов: {{ready}} / {{total}}",
-    "jumpToBlankTitle": "Перейти к разделу без заголовка"
+    "jumpToBlankTitle": "Перейти к разделу без заголовка",
+    "analyzingMediaMaterial": "Анализ аудио/видео"
   },
   "settings": {
     "title": "Настройки",
@@ -1017,6 +1069,7 @@
     "addProviderDescription": "Добавьте провайдеров моделей для расширения доступных AI-моделей",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1035,10 +1088,12 @@
       "tavily": "Tavily",
       "bocha": "Bocha",
       "brave": "Brave Search",
-      "baidu": "Baidu"
+      "baidu": "Baidu",
+      "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "Протокол OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Протокол Claude",
       "google": "Протокол Gemini"
     },
@@ -1057,6 +1112,7 @@
     "importFromClipboard": "Импорт из буфера",
     "apiSecret": "API-ключ",
     "apiHost": "Base URL",
+    "azureDeploymentHint": "Укажите конечную точку Azure OpenAI выше, затем добавьте имя каждого развертывания Azure как модель.",
     "baseUrlRegion": {
       "china": "Китай",
       "international": "Международный",
@@ -1558,12 +1614,15 @@
     "clearCacheButton": "Удалить все данные навсегда",
     "clearCacheSuccess": "Кэш очищен, страница скоро обновится",
     "clearCacheFailed": "Не удалось очистить кэш, попробуйте снова",
+    "persistUnavailable": "Изменения не сохраняются: приложению не удаётся получить доступ к сохранённым данным. Если перезагрузка не помогает, очистите локальный кэш в настройках.",
+    "persistChangesLost": "Хранилище снова работает, но изменения, сделанные во время сбоя, сохранить не удалось — они заменены последней сохранённой версией.",
     "webSearchSettings": "Веб-поиск",
     "webSearchApiKey": "API-ключ поиска",
     "webSearchApiKeyPlaceholder": "Введите API-ключ поиска",
     "webSearchApiKeyPlaceholderServer": "Серверный ключ настроен, можно ввести свой",
     "webSearchApiKeyHint": "Получите API-ключ у выбранного поискового провайдера",
     "webSearchApiKeyOptional": "API-ключ необязателен. Без него будет использоваться парсинг публичной страницы.",
+    "searxngServerOnlyNotice": "SearXNG должен быть настроен на сервере. Установите переменную окружения SEARXNG_BASE_URL (или раздел web-search в server-providers.yml). URL экземпляра от клиента не принимаются.",
     "baiduSubSources": "Источники поиска Baidu",
     "baiduSubSourcesDescription": "Выберите хотя бы один источник Baidu.",
     "baiduSubSourceWeb": "Веб-поиск",
@@ -1626,7 +1685,9 @@
       "capabilities": "Capabilities offered",
       "offeredNote": "Models offered by this plan. Pick the ones you want on the generation bar — availability depends on your plan tier, and unsupported models will error at generation time."
     },
-    "ttsBrowserNativeTimelineNotice": "Встроенный в браузер TTS не поддерживает функции аудио на таймлайне редактора (прослушивание, повторная генерация и массовая озвучка). Переключитесь на управляемый TTS-провайдер, чтобы генерировать и управлять аудио для каждой строки."
+    "ttsBrowserNativeTimelineNotice": "Встроенный в браузер TTS не поддерживает функции аудио на таймлайне редактора (прослушивание, повторная генерация и массовая озвучка). Переключитесь на управляемый TTS-провайдер, чтобы генерировать и управлять аудио для каждой строки.",
+    "alidocmindAccessKeyId": "AccessKey ID",
+    "alidocmindAccessKeySecret": "AccessKey Secret"
   },
   "profile": {
     "title": "Профиль",

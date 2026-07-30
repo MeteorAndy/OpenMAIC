@@ -8,13 +8,18 @@ import { db, mediaFileKey } from '@/lib/utils/database';
 import type { AudioFileRecord } from '@/lib/utils/database';
 import { makeScene, type Stage, type Scene } from '@/lib/types/stage';
 import {
+  deleteCourse,
   upsertCourse,
   replaceGeneratedAgents,
   replaceScenes,
   upsertMediaFile,
 } from '@/lib/supabase/queries';
 import { uploadBlobToStorage } from '@/lib/storage/client';
-import type { ClassroomManifest, ManifestScene } from '@/lib/export/classroom-zip-types';
+import {
+  agentConfigFromManifest,
+  type ClassroomManifest,
+  type ManifestScene,
+} from '@/lib/export/classroom-zip-types';
 import { rewriteAudioRefsToIds } from '@/lib/export/classroom-zip-utils';
 import { z } from 'zod';
 import { createLogger } from '@/lib/logger';
@@ -110,6 +115,8 @@ export function useImportClassroom(onSuccess?: () => void) {
       setPhase('parsing');
       const toastId = toast.loading(t('import.parsing'));
 
+      let importedStageId: string | undefined;
+      const importedAudioIds: string[] = [];
       try {
         // 0. Hard size cap (untrusted upload boundary).
         if (file.size > MAX_ZIP_SIZE) {
@@ -170,6 +177,7 @@ export function useImportClassroom(onSuccess?: () => void) {
 
         // 3. Generate new IDs
         const newStageId = nanoid();
+        importedStageId = newStageId;
         const now = Date.now();
 
         // Agent ID mapping: index → new ID
@@ -231,6 +239,7 @@ export function useImportClassroom(onSuccess?: () => void) {
             createdAt: now,
           };
           await db.audioFiles.put(record);
+          importedAudioIds.push(newId);
         }
 
         // Upload + upsert generated media files one at a time (best-effort:
@@ -310,15 +319,9 @@ export function useImportClassroom(onSuccess?: () => void) {
 
         // Write agents (delete-then-upsert by course_id; voiceConfig dropped)
         if (manifest.agents?.length) {
-          const agentInputs = manifest.agents.map((a, i) => ({
-            id: newAgentIds[i],
-            name: a.name,
-            role: a.role,
-            persona: a.persona,
-            avatar: a.avatar,
-            color: a.color,
-            priority: a.priority,
-          }));
+          const agentInputs = manifest.agents.map((agent, index) =>
+            agentConfigFromManifest(agent, newAgentIds[index]),
+          );
           await replaceGeneratedAgents(newStageId, agentInputs);
         }
 
@@ -370,6 +373,22 @@ export function useImportClassroom(onSuccess?: () => void) {
         onSuccess?.();
       } catch (error) {
         log.error('Classroom ZIP import failed:', error);
+        // Compensate every durable row this import could have created, logging
+        // individual failures. Object-storage blobs remain best-effort orphans.
+        const cleanup = async (label: string, operation: () => Promise<unknown>) => {
+          try {
+            await operation();
+          } catch (cleanupError) {
+            log.error(`Failed to undo imported ${label}:`, cleanupError);
+          }
+        };
+        if (importedStageId) {
+          const stageId = importedStageId;
+          await cleanup('course', () => deleteCourse(stageId));
+        }
+        if (importedAudioIds.length > 0) {
+          await cleanup('audio files', () => db.audioFiles.bulkDelete(importedAudioIds));
+        }
         const isQuotaError = error instanceof DOMException && error.name === 'QuotaExceededError';
         toast.error(isQuotaError ? t('import.error.storageFull') : t('import.error.invalidZip'), {
           id: toastId,

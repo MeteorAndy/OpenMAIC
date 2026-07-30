@@ -36,6 +36,18 @@ import type {
   WidgetRevealAction,
 } from '@/lib/types/action';
 import type { CodeLine } from '@openmaic/dsl';
+import {
+  EFFECT_AUTO_CLEAR_MS,
+  MAX_VIDEO_WAIT_MS,
+  WB_OPEN_MS,
+  WB_DRAW_MS,
+  WB_EDIT_MS,
+  WB_DELETE_MS,
+  WB_CLOSE_MS,
+  WIDGET_MS,
+  wbDrawCodeMs,
+  wbClearMs,
+} from '@/lib/choreography';
 import katex from 'katex';
 import { createLogger } from '@/lib/logger';
 
@@ -71,14 +83,12 @@ function generateLineIds(count: number): string[] {
 
 // ==================== ActionEngine ====================
 
-/** Default duration (ms) before fire-and-forget effects auto-clear */
-const EFFECT_AUTO_CLEAR_MS = 5000;
-
 /** Callback for sending messages to widget iframe */
 export type WidgetMessageCallback = (type: string, payload: Record<string, unknown>) => void;
 
 export interface ActionExecutionOptions {
   silent?: boolean;
+  signal?: AbortSignal;
 }
 
 export class ActionEngine {
@@ -145,7 +155,7 @@ export class ActionEngine {
         return;
       // Synchronous — Video
       case 'play_video':
-        return this.executePlayVideo(action as PlayVideoAction);
+        return this.executePlayVideo(action as PlayVideoAction, options);
 
       // Synchronous
       case 'speech':
@@ -254,7 +264,11 @@ export class ActionEngine {
 
   // ==================== Synchronous — Video ====================
 
-  private async executePlayVideo(action: PlayVideoAction): Promise<void> {
+  private async executePlayVideo(
+    action: PlayVideoAction,
+    options: ActionExecutionOptions = {},
+  ): Promise<void> {
+    if (options.signal?.aborted) return;
     // Resolve the video element to a generated media reference.
     // action.elementId is the slide element ID (e.g. video_abc123), but the media
     // store is keyed by generated media refs, so we need to bridge the two.
@@ -265,20 +279,27 @@ export class ActionEngine {
       if (task && task.status !== 'done') {
         // Wait for media to be ready (or fail)
         await new Promise<void>((resolve) => {
-          const unsubscribe = useMediaGenerationStore.subscribe((state) => {
+          let unsubscribe = () => {};
+          const finish = () => {
+            unsubscribe();
+            options.signal?.removeEventListener('abort', finish);
+            resolve();
+          };
+          unsubscribe = useMediaGenerationStore.subscribe((state) => {
             const t = state.tasks[placeholderId];
             if (!t || t.status === 'done' || t.status === 'failed') {
-              unsubscribe();
-              resolve();
+              finish();
             }
           });
+          options.signal?.addEventListener('abort', finish, { once: true });
           // Check again in case it resolved between getState and subscribe
           const current = useMediaGenerationStore.getState().tasks[placeholderId];
           if (!current || current.status === 'done' || current.status === 'failed') {
-            unsubscribe();
-            resolve();
+            finish();
           }
         });
+
+        if (options.signal?.aborted) return;
 
         // If failed, skip playback
         if (useMediaGenerationStore.getState().tasks[placeholderId]?.status === 'failed') {
@@ -287,29 +308,41 @@ export class ActionEngine {
       }
     }
 
+    if (options.signal?.aborted) return;
     useCanvasStore.getState().playVideo(action.elementId);
 
     // Wait until the video finishes playing, with a safety timeout to prevent
     // the playback engine from hanging indefinitely if the video element is
     // invalid or the state change is missed.
     return new Promise<void>((resolve) => {
-      const MAX_VIDEO_WAIT_MS = 5 * 60 * 1000; // 5 minutes
-      const timeout = setTimeout(() => {
-        unsubscribe();
-        log.warn(`[playVideo] Timeout waiting for video ${action.elementId} to finish`);
-        resolve();
-      }, MAX_VIDEO_WAIT_MS);
-      const unsubscribe = useCanvasStore.subscribe((state) => {
-        if (state.playingVideoElementId !== action.elementId) {
-          clearTimeout(timeout);
-          unsubscribe();
-          resolve();
-        }
-      });
-      if (useCanvasStore.getState().playingVideoElementId !== action.elementId) {
+      let finished = false;
+      let unsubscribe = () => {};
+      const finish = () => {
+        if (finished) return;
+        finished = true;
         clearTimeout(timeout);
         unsubscribe();
+        options.signal?.removeEventListener('abort', abortPlayback);
         resolve();
+      };
+      const abortPlayback = () => {
+        if (useCanvasStore.getState().playingVideoElementId === action.elementId) {
+          useCanvasStore.getState().pauseVideo();
+        }
+        finish();
+      };
+      const timeout = setTimeout(() => {
+        log.warn(`[playVideo] Timeout waiting for video ${action.elementId} to finish`);
+        finish();
+      }, MAX_VIDEO_WAIT_MS);
+      unsubscribe = useCanvasStore.subscribe((state) => {
+        if (state.playingVideoElementId !== action.elementId) {
+          finish();
+        }
+      });
+      options.signal?.addEventListener('abort', abortPlayback, { once: true });
+      if (useCanvasStore.getState().playingVideoElementId !== action.elementId) {
+        finish();
       }
     });
   }
@@ -365,7 +398,7 @@ export class ActionEngine {
     useCanvasStore.getState().setWhiteboardOpen(true);
     if (options.silent) return;
     // Wait for open animation to complete (slow spring: stiffness 120, damping 18, mass 1.2)
-    await delay(2000);
+    await delay(WB_OPEN_MS);
   }
 
   private async executeWbDrawText(
@@ -401,7 +434,7 @@ export class ActionEngine {
 
     if (!options.silent) {
       // Wait for element fade-in animation
-      await delay(800);
+      await delay(WB_DRAW_MS);
     }
   }
 
@@ -432,7 +465,7 @@ export class ActionEngine {
 
     if (!options.silent) {
       // Wait for element fade-in animation
-      await delay(800);
+      await delay(WB_DRAW_MS);
     }
   }
 
@@ -460,7 +493,7 @@ export class ActionEngine {
       wb.data.id,
     );
 
-    if (!options.silent) await delay(800);
+    if (!options.silent) await delay(WB_DRAW_MS);
   }
 
   private async executeWbDrawLatex(
@@ -499,7 +532,7 @@ export class ActionEngine {
       return;
     }
 
-    if (!options.silent) await delay(800);
+    if (!options.silent) await delay(WB_DRAW_MS);
   }
 
   private async executeWbDrawTable(
@@ -558,7 +591,7 @@ export class ActionEngine {
       wb.data.id,
     );
 
-    if (!options.silent) await delay(800);
+    if (!options.silent) await delay(WB_DRAW_MS);
   }
 
   private async executeWbDrawLine(
@@ -595,7 +628,7 @@ export class ActionEngine {
 
     if (!options.silent) {
       // Wait for element fade-in animation
-      await delay(800);
+      await delay(WB_DRAW_MS);
     }
   }
 
@@ -607,6 +640,12 @@ export class ActionEngine {
     if (!wb.success || !wb.data) return;
 
     const lines = codeToLines(action.code);
+    const suppliedLineIds = (action as WbDrawCodeAction & { lineIds?: string[] }).lineIds;
+    if (suppliedLineIds?.length === lines.length) {
+      lines.forEach((line, index) => {
+        line.id = suppliedLineIds[index];
+      });
+    }
 
     this.stageAPI.whiteboard.addElement(
       {
@@ -628,8 +667,8 @@ export class ActionEngine {
     );
 
     if (!options.silent) {
-      // Wait for typing animation: base 800ms + 50ms per line, capped at 3s
-      const animMs = Math.min(800 + lines.length * 50, 3000);
+      // Wait for typing animation (base 800ms + 50ms/line, capped at 3s)
+      const animMs = wbDrawCodeMs(lines.length);
       await delay(animMs);
     }
   }
@@ -650,7 +689,11 @@ export class ActionEngine {
 
     let lines: CodeLine[] = [...element.lines];
     const newContentLines = action.content ? action.content.split('\n') : [];
-    const newLineIds = generateLineIds(newContentLines.length);
+    const suppliedLineIds = (action as WbEditCodeAction & { newLineIds?: string[] }).newLineIds;
+    const newLineIds =
+      suppliedLineIds?.length === newContentLines.length
+        ? suppliedLineIds
+        : generateLineIds(newContentLines.length);
 
     switch (action.operation) {
       case 'insert_after': {
@@ -697,7 +740,7 @@ export class ActionEngine {
 
     if (!options.silent) {
       // Wait for edit animation
-      await delay(600);
+      await delay(WB_EDIT_MS);
     }
   }
 
@@ -709,7 +752,7 @@ export class ActionEngine {
     if (!wb.success || !wb.data) return;
 
     this.stageAPI.whiteboard.deleteElement(action.elementId, wb.data.id);
-    if (!options.silent) await delay(300);
+    if (!options.silent) await delay(WB_DELETE_MS);
   }
 
   private async executeWbClear(options: ActionExecutionOptions = {}): Promise<void> {
@@ -731,8 +774,8 @@ export class ActionEngine {
     // Trigger cascade exit animation
     useCanvasStore.getState().setWhiteboardClearing(true);
 
-    // Wait for cascade: base 380ms + 55ms per element, capped at 1400ms
-    const animMs = Math.min(380 + elementCount * 55, 1400);
+    // Wait for cascade (base 380ms + 55ms/element, capped at 1400ms)
+    const animMs = wbClearMs(elementCount);
     await delay(animMs);
 
     // Actually remove elements
@@ -744,7 +787,7 @@ export class ActionEngine {
     useCanvasStore.getState().setWhiteboardOpen(false);
     if (options.silent) return;
     // Wait for close animation (500ms ease-out tween)
-    await delay(700);
+    await delay(WB_CLOSE_MS);
   }
 
   // ==================== Widget Actions ====================
@@ -765,14 +808,14 @@ export class ActionEngine {
       content: action.content,
     });
     // Quick delay for visual effect
-    await delay(300);
+    await delay(WIDGET_MS);
   }
 
   /** Execute widget setState action */
   private async executeWidgetSetState(action: WidgetSetStateAction): Promise<void> {
     this.sendWidgetMessage('SET_WIDGET_STATE', { state: action.state, content: action.content });
     // Quick delay for state change to propagate
-    await delay(300);
+    await delay(WIDGET_MS);
   }
 
   /** Execute widget annotation action */
@@ -781,12 +824,12 @@ export class ActionEngine {
       target: action.target,
       content: action.content,
     });
-    await delay(300);
+    await delay(WIDGET_MS);
   }
 
   /** Execute widget reveal action */
   private async executeWidgetReveal(action: WidgetRevealAction): Promise<void> {
     this.sendWidgetMessage('REVEAL_ELEMENT', { target: action.target, content: action.content });
-    await delay(300);
+    await delay(WIDGET_MS);
   }
 }

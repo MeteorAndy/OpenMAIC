@@ -15,6 +15,8 @@
     "removePdf": "移除文件",
     "documentExtractor": "文档解析器",
     "courseMaterialUpload": "上传课程材料",
+    "courseMaterialsSelected": "已选择 {{n}} 个材料",
+    "courseMaterialMergeOrder": "材料会按下方显示顺序合并。",
     "removeCourseMaterial": "移除文件",
     "webSearchOn": "已开启",
     "webSearchOff": "点击开启",
@@ -49,7 +51,41 @@
     "exportFailed": "导出失败",
     "classroomZip": "导出课堂 ZIP",
     "classroomZipDesc": "课程结构 + 媒体文件",
-    "inlinePartial": "{{count}} 个外部资源未能打包，离线时课程可能无法正常显示。"
+    "inlinePartial": "{{count}} 个外部资源未能打包，离线时课程可能无法正常显示。",
+    "video": "导出视频",
+    "videoDesc": "自包含 Hyperframes 工程（可渲染为 MP4）",
+    "videoNoScenes": "没有可导出的场景。",
+    "videoCompiling": "正在编译视频时间线...",
+    "videoRendering": "正在渲染幻灯片并收集素材...",
+    "videoPackaging": "正在打包视频工程...",
+    "videoSuccess": "视频工程已导出",
+    "videoFailed": "视频导出失败",
+    "videoWarnings": "有 {{assets}} 个素材缺失，导出报告中有 {{diagnostics}} 个问题。",
+    "videoMp4Success": "视频已渲染",
+    "videoServiceUnavailable": "未配置渲染服务 —— 已下载项目 ZIP 供本地渲染。",
+    "videoResolution": "分辨率",
+    "videoFps": "帧率",
+    "videoQuality": "质量",
+    "videoQuality_draft": "草稿",
+    "videoQuality_standard": "标准",
+    "videoQuality_high": "高",
+    "videoProgress": "{{percent}}%",
+    "videoProgressWithEta": "{{percent}}% · 预计剩余 {{remaining}}",
+    "videoEtaMinSec": "{{min}} 分 {{sec}} 秒",
+    "videoEtaSec": "{{sec}} 秒",
+    "videoRenderMp4": "渲染 MP4",
+    "videoDownloadZip": "下载项目 ZIP",
+    "videoServiceHint": "渲染 MP4 需要渲染服务。可下载 ZIP 在本地渲染。",
+    "videoBurnSubtitles": "烧录字幕",
+    "videoBurnSubtitlesDesc": "关闭时导出无字幕的干净视频，可在剪辑软件中自行添加字幕文件。",
+    "videoDownloadSubtitles": "下载字幕 (.srt)",
+    "subtitlesCompiling": "正在生成字幕…",
+    "subtitlesSuccess": "字幕已下载",
+    "subtitlesEmpty": "没有可生成字幕的旁白",
+    "subtitlesFailed": "字幕下载失败",
+    "noSlides": "无可导出的幻灯片",
+    "noSlidesSkipped": "本课程无幻灯片，已跳过 PPTX",
+    "nothingToExport": "没有可导出的内容"
   },
   "import": {
     "classroom": "导入课堂",
@@ -79,6 +115,7 @@
     "unknown": "未知",
     "stopDiscussion": "结束讨论",
     "endQA": "结束问答",
+    "softClosing": "继续讨论",
     "error": {
       "emptyAgentResponses": "智能体连续无响应,讨论已停止。请重新尝试或检查模型配置。",
       "streamInterrupted": "数据流意外中断,讨论未能完成。请重新尝试。"
@@ -204,8 +241,8 @@
     },
     "insert": {
       "textBox": "文本框",
-      "expandToolbar": "展开插入工具",
-      "collapseToolbar": "收起插入工具",
+      "dragToolbar": "拖动工具栏",
+      "dragToolbarKeyboard": "移动工具栏：按回车或空格开始，再使用方向键移动",
       "image": "图片",
       "imageDrop": "拖入图片或点击选择文件",
       "imageOr": "或粘贴图片 URL",
@@ -263,7 +300,7 @@
       "commentPromptLabel": "评分指引",
       "commentPromptPlaceholder": "应如何评判这道主观题？",
       "empty": "暂无题目",
-      "emptyHint": "点击上方“添加题目”创建第一道题。",
+      "emptyHint": "点击“添加题目”创建第一道题。",
       "type": {
         "single": "单选",
         "multiple": "多选",
@@ -332,6 +369,10 @@
         "fixHtml": {
           "label": "修复互动页的 bug",
           "examples": "“开始按钮点了没反应”、“手机上排版重叠”"
+        },
+        "elements": {
+          "label": "微调页面元素",
+          "examples": "“把标题改成蓝色并上移一点”、“把这个图缩小”"
         }
       },
       "newConversation": "新对话",
@@ -426,6 +467,14 @@
       "reading": "读取中",
       "done": "已读取",
       "failed": "未读取"
+    },
+    "editElements": {
+      "title": "编辑元素",
+      "editing": "编辑中",
+      "applied": "已应用",
+      "notApplied": "未应用",
+      "applyFailed": "编辑器无法应用元素修改，未更改任何内容。",
+      "applyPartiallyFailed": "编辑器未能应用一项或多项元素修改，其他修改可能已应用。"
     }
   },
   "classroomComplete": {
@@ -501,6 +550,7 @@
     "thinking": "思考中",
     "yourTurn": "轮到你发言了",
     "stopDiscussion": "结束讨论",
+    "softClosing": "继续讨论",
     "autoPlay": "自动播放",
     "autoPlayOff": "关闭自动播放",
     "speed": "倍速",
@@ -825,12 +875,14 @@
     "requirementPlaceholder": "输入你想学的任何内容，例如：\n「从零学 Python，30 分钟写出第一个程序」\n「用白板给我讲解傅里叶变换」\n「阿瓦隆桌游怎么玩」",
     "requirementRequired": "请输入课程需求",
     "fileTooLarge": "文件过大，请选择小于 50MB 的文件",
+    "courseMaterialCountLimit": "最多可上传 5 个课程材料文件",
+    "courseMaterialTotalSizeLimit": "课程材料总大小需小于 150MB",
     "unsupportedCourseMaterial": "当前解析器不支持该格式，请切换解析器或选择其他文件"
   },
   "generation": {
     "pdfLoadFailed": "无法加载 PDF 文件，请重试",
     "pdfParseFailed": "PDF 解析失败",
-    "analyzingCourseMaterial": "解析 {{type}} 文件",
+    "analyzingCourseMaterial": "解析文档",
     "analyzingCourseMaterialDesc": "正在提取文档结构和内容...",
     "courseMaterialLoadFailed": "无法加载课程材料，请重试",
     "courseMaterialParseFailed": "课程材料解析失败",
@@ -843,11 +895,6 @@
     "generatingActionsDesc": "正在编排讲解、聚焦和互动流程...",
     "generationComplete": "生成完成！",
     "generationFailed": "生成失败",
-    "generatingCourse": "正在生成课程",
-    "openingClassroom": "即将打开课堂...",
-    "outlineReady": "课程大纲已生成",
-    "generatingFirstPage": "首页内容生成中...",
-    "firstPageReady": "首页已就绪！正在打开课堂...",
     "speechFailed": "语音合成失败",
     "retryScene": "重试生成",
     "retryingScene": "正在重新生成...",
@@ -868,6 +915,10 @@
     "outlineEmptyResponse": "模型未返回有效的大纲内容，请检查模型配置后重试",
     "outlineGenerateFailed": "大纲生成失败，请稍后重试",
     "sceneGenerateFailed": "场景生成失败，请稍后重试",
+    "sceneGenerateAuthFailed": "场景生成失败：模型服务拒绝了当前凭据。请检查模型配置。",
+    "sceneGenerateRateLimited": "场景生成触发限流，请稍后重试。",
+    "sceneGenerateProviderUnavailable": "模型服务暂时不可用，请稍后重试。",
+    "sceneGenerateInvalidResponse": "模型未返回有效的场景内容，请更换模型或调整课程需求后重试。",
     "reviewOutlineTitle": "审阅课程大纲",
     "reviewOutlineDesc": "可在生成内容前编辑、重排、删除或新增场景。",
     "reviewOutlineAutoContinue": "如不审阅，大纲生成后会自动继续生成课程内容。",
@@ -936,7 +987,8 @@
     "webSearchingDesc": "正在搜索网络获取最新资料",
     "webSearchFailed": "网络搜索失败",
     "outlinesReadyCount": "{{ready}} / {{total}} 章节就绪",
-    "jumpToBlankTitle": "跳到待补充标题的章节"
+    "jumpToBlankTitle": "跳到待补充标题的章节",
+    "analyzingMediaMaterial": "解析音视频内容"
   },
   "settings": {
     "title": "设置",
@@ -1017,6 +1069,7 @@
     "addProviderDescription": "添加自定义模型提供方以扩展可用的AI模型",
     "providerNames": {
       "openai": "OpenAI",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude",
       "google": "Gemini",
       "deepseek": "DeepSeek",
@@ -1035,10 +1088,12 @@
       "tavily": "Tavily",
       "bocha": "博查",
       "brave": "Brave Search",
-      "baidu": "百度"
+      "baidu": "百度",
+      "searxng": "SearXNG"
     },
     "providerTypes": {
       "openai": "OpenAI 协议",
+      "azure": "Azure OpenAI",
       "anthropic": "Claude 协议",
       "google": "Gemini 协议"
     },
@@ -1057,6 +1112,7 @@
     "importFromClipboard": "从剪贴板导入",
     "apiSecret": "API 密钥",
     "apiHost": "Base URL",
+    "azureDeploymentHint": "请在上方填写 Azure OpenAI Endpoint，并将每个 Azure Deployment 名称添加为模型。",
     "baseUrlRegion": {
       "china": "国内站",
       "international": "国际站",
@@ -1558,12 +1614,15 @@
     "clearCacheButton": "永久删除所有数据",
     "clearCacheSuccess": "缓存已清空，页面即将刷新",
     "clearCacheFailed": "清空缓存失败，请重试",
+    "persistUnavailable": "更改未被保存：应用无法访问已存储的数据。如果刷新后仍未恢复，请在设置中清除本地缓存。",
+    "persistChangesLost": "存储已恢复，但在其不可用期间所做的更改未能保存，已被上次保存的版本覆盖。",
     "webSearchSettings": "网络搜索",
     "webSearchApiKey": "搜索 API Key",
     "webSearchApiKeyPlaceholder": "输入你的搜索 API Key",
     "webSearchApiKeyPlaceholderServer": "已配置服务端密钥，可选填覆盖",
     "webSearchApiKeyHint": "从所选搜索服务商获取 API Key，用于网络搜索",
     "webSearchApiKeyOptional": "API Key 为可选项。未填写时将通过公开页面抓取获取结果。",
+    "searxngServerOnlyNotice": "SearXNG 须由服务端配置。请设置 SEARXNG_BASE_URL 环境变量（或在 server-providers.yml 的 web-search 段中配置）。不接受客户端自行填写实例地址。",
     "baiduSubSources": "百度搜索源",
     "baiduSubSourcesDescription": "选择至少一个百度数据源参与搜索。",
     "baiduSubSourceWeb": "网页搜索",
@@ -1626,7 +1685,9 @@
       "capabilities": "套餐提供的能力",
       "offeredNote": "套餐提供的模型清单。请在生成界面选择需要使用的模型——是否可用取决于你的套餐档位，不支持的模型会在生成时报错。"
     },
-    "ttsBrowserNativeTimelineNotice": "浏览器内置 TTS 不支持编辑器时间轴的音频功能（试听、重新生成、全部配音）。切换到托管 TTS 提供方即可逐句生成和管理音频。"
+    "ttsBrowserNativeTimelineNotice": "浏览器内置 TTS 不支持编辑器时间轴的音频功能（试听、重新生成、全部配音）。切换到托管 TTS 提供方即可逐句生成和管理音频。",
+    "alidocmindAccessKeyId": "AccessKey ID",
+    "alidocmindAccessKeySecret": "AccessKey Secret"
   },
   "profile": {
     "title": "个人资料",
