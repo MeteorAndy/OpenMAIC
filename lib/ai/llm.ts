@@ -10,6 +10,7 @@ import { createLogger } from '@/lib/logger';
 import { PROVIDERS } from './providers';
 import { thinkingContext } from './thinking-context';
 import { getModelMetadataKey } from './model-metadata';
+import { getCanonicalModelId } from './model-aliases';
 import type { ThinkingCapability, ThinkingConfig } from '@/lib/types/provider';
 import {
   getThinkingMode,
@@ -140,9 +141,10 @@ function buildThinkingProviderOptions(
   modelId: string,
   config: ThinkingConfig,
 ): ProviderOptions | undefined {
+  const lookupModelId = providerId ? getCanonicalModelId(providerId, modelId) : modelId;
   const info = providerId
-    ? MODEL_THINKING_MAP.get(getModelMetadataKey(providerId, modelId))
-    : UNIQUE_MODEL_THINKING_MAP.get(modelId);
+    ? MODEL_THINKING_MAP.get(getModelMetadataKey(providerId, lookupModelId))
+    : UNIQUE_MODEL_THINKING_MAP.get(lookupModelId);
   if (!info?.thinking) return undefined; // model has no thinking capability
   const thinking = info.thinking;
   if (thinking.control === 'none') return undefined;
@@ -162,7 +164,9 @@ function buildThinkingProviderOptions(
         anthropic: options,
       });
 
-      if (mode === 'disabled') return buildAnthropicOptions({ thinking: { type: 'disabled' } });
+      if (mode === 'disabled' && thinking.toggleable !== false) {
+        return buildAnthropicOptions({ thinking: { type: 'disabled' } });
+      }
 
       if (thinking.control === 'toggle-budget' || thinking.control === 'budget-only') {
         const budget = pickThinkingBudget(thinking, config);
@@ -175,9 +179,6 @@ function buildThinkingProviderOptions(
       if (!effort) return undefined;
 
       if (thinking.anthropicThinking?.type === 'adaptive') {
-        // Some newly released Anthropic effort values can lag the local SDK
-        // schema. OpenAI-compatible transports still inject those at fetch time.
-        if (effort === 'xhigh') return undefined;
         return buildAnthropicOptions({
           thinking: { type: 'adaptive' },
           effort,
@@ -211,7 +212,12 @@ function buildThinkingProviderOptions(
 }
 
 /**
- * Resolve providerOptions for direct AI SDK calls that bypass callLLM/streamLLM.
+ * Resolve providerOptions the way callLLM / streamLLM resolve them internally.
+ *
+ * There are no production callers left: every server-side call goes through the
+ * wrappers (a lint rule enforces it), and they inject provider options
+ * themselves. Kept exported because it is the only way to inspect that mapping
+ * from the outside, which the SDK-integration tests do.
  */
 export function resolveThinkingProviderOptions(
   model: LanguageModel,
@@ -278,8 +284,9 @@ const DEFAULT_VALIDATE = (text: string) => text.trim().length > 0;
 // ---------------------------------------------------------------------------
 
 function buildUsageMeta(params: GenerateTextParams | StreamTextParams, source: string) {
-  const modelId = getModelId(params);
+  const rawModelId = getModelId(params);
   const providerId = getModelProviderId(params) ?? 'unknown';
+  const modelId = getCanonicalModelId(providerId, rawModelId);
   return { source, providerId, modelId, modelString: `${providerId}:${modelId}` };
 }
 
@@ -341,6 +348,17 @@ export async function callLLM<T extends GenerateTextParams>(
         generateText(injectedParams),
       );
 
+      // Record before validating: every attempt that got this far was billed,
+      // including one that fails validation below and one that is handed back
+      // after the retries are exhausted. Recording on the success path only
+      // would drop both.
+      //
+      // `usage` is the LAST step only; on a multi-step tool run (`stopWhen`)
+      // every earlier step would go unaccounted. `totalUsage` aggregates across
+      // steps and equals `usage` for a single-step call. Mirrors streamLLM,
+      // which already prefers the aggregate.
+      recordUsageSafe(result.totalUsage ?? result.usage, buildUsageMeta(params, source));
+
       // Validate result (only when retries are configured)
       if (validate && !validate(result.text)) {
         log.warn(
@@ -350,7 +368,6 @@ export async function callLLM<T extends GenerateTextParams>(
         continue;
       }
 
-      recordUsageSafe(result.usage, buildUsageMeta(params, source));
       return result;
     } catch (error) {
       lastError = error;

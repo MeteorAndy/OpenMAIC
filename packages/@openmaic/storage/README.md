@@ -6,9 +6,9 @@ persisting app state, depending only on [`@openmaic/dsl`](../dsl).
 The DSL owns _what_ persists (document / runtime shape + validation + migration +
 the asset `StorageProvider` interface). This package owns _where / how_ it
 persists — the primitives and their backends. The pluggable seam is the
-**backend**, not the database driver: a browser backend (zero server, the
-`clone-and-run` default) and, later, an HTTP backend whose server owns a
-database.
+**backend**, not the database driver: browser backends (the zero-server
+`clone-and-run` default), HTTP clients plus a reference server, and PostgreSQL
+server backends.
 
 ## Dependency arrow (acyclic)
 
@@ -68,14 +68,17 @@ a browser.
   cascades one learner's sessions + records on one stage, and
   `deleteStageRuntime` clears a whole stage — the hook a document deletion
   cascades through.
+- `deleteAllRuntime` clears every runtime session and record for explicit
+  whole-cache reset flows.
 
 ## Backend equivalence
 
 Each primitive has one implementation-agnostic contract suite
 (`test/kv-contract.ts`, `test/asset-contract.ts`, `test/document-contract.ts`,
 `test/runtime-contract.ts`).
-Every backend is proven by running the same suite against it, so a new backend
-(the coming HTTP one) cannot silently diverge from the primitive's semantics.
+Every backend is proven by running the same suite against it, so browser, HTTP,
+and PostgreSQL implementations cannot silently diverge from a primitive's
+semantics.
 
 ## Roadmap
 
@@ -86,8 +89,25 @@ Every backend is proven by running the same suite against it, so a new backend
       DSL migration registry, validation gate) + browser backend
 - [x] `RuntimeStore` (sessions + append-only records, runtime version line,
       per-kind payload gate) + browser backend
-- [ ] wire the app's zustand stores + ad-hoc `localStorage` through `KVStore`
-- [ ] HTTP backend + reference server + one HTTP contract
+- [x] wire the app's settings + user-profile `persist` stores through `KVStore`
+      (both `account` scope). No automatic migration of pre-cutover data: new
+      data persists through `KVStore`, legacy `localStorage` keys are ignored
+      (not migrated) and best-effort purged, and a user reconfigures once on
+      upgrade
+- [ ] wire the app's third `persist` store (`agent-registry-storage`), still on
+      zustand's default `localStorage`
+- [ ] wire the app's remaining ad-hoc `localStorage` keys through `KVStore`
+- [ ] a hydration gate the app actually consumes — **required before an
+      `account` scope can be served remotely**. With the browser backend,
+      hydration resolves within microtasks of module evaluation and nothing
+      observes it; a network round trip makes the gap visible, and the one-shot
+      decisions taken against a not-yet-hydrated store (classroom agent-selection
+      restore, media orchestration, scene-generator retry, server-provider
+      reconcile) decide wrongly and then have their corrective writes refused
+- [x] RuntimeStore HTTP backend + reference server + HTTP contract
+- [x] RuntimeStore PostgreSQL backend
+- [x] DocumentStore HTTP backend + reference-server routes + HTTP contract
+- [x] DocumentStore PostgreSQL backend
 
 ## License
 

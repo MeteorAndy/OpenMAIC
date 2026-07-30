@@ -26,10 +26,16 @@
  */
 
 import { createOpenAI } from '@ai-sdk/openai';
+import { createAzure } from '@ai-sdk/azure';
 import { createAnthropic } from '@ai-sdk/anthropic';
 import { createGoogleGenerativeAI } from '@ai-sdk/google';
 import { wrapLanguageModel, extractReasoningMiddleware } from 'ai';
-import { wrapResponseWithReasoning } from './reasoning-sse';
+import {
+  createKimiReasoningPreservationMiddleware,
+  restoreKimiReasoningInRequestBody,
+  wrapJsonResponseWithReasoning,
+  wrapResponseWithReasoning,
+} from './reasoning-sse';
 import type { LanguageModel } from 'ai';
 import type {
   ProviderId,
@@ -39,8 +45,15 @@ import type {
   ThinkingConfig,
 } from '@/lib/types/provider';
 import { applyModelMetadata, getCatalogThinkingCapability } from './model-metadata';
-import { getDefaultThinkingConfig, getThinkingMode, pickThinkingBudget } from './thinking-config';
+import { findModelById } from './model-aliases';
+import {
+  getDefaultThinkingConfig,
+  getThinkingMode,
+  pickThinkingBudget,
+  pickThinkingEffort,
+} from './thinking-config';
 import { createLogger } from '@/lib/logger';
+import { normalizeAzureBaseUrl } from './azure';
 // NOTE: Do NOT import thinking-context.ts here — it uses node:async_hooks
 // which is server-only, and this file is also used on the client via
 // settings.ts. The thinking context is read from globalThis instead
@@ -68,7 +81,7 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     models: [
       {
         id: 'gpt-5.6',
-        name: 'GPT-5.6',
+        name: 'GPT-5.6 Sol',
         contextWindow: 1050000,
         outputWindow: 128000,
         capabilities: {
@@ -76,7 +89,39 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
           tools: true,
           vision: true,
           thinking: {
-            toggleable: false,
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'gpt-5.6-terra',
+        name: 'GPT-5.6 Terra',
+        contextWindow: 1050000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'gpt-5.6-luna',
+        name: 'GPT-5.6 Luna',
+        contextWindow: 1050000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
             budgetAdjustable: true,
             defaultEnabled: true,
           },
@@ -165,6 +210,18 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     ],
   },
 
+  azure: {
+    id: 'azure',
+    name: 'Azure OpenAI',
+    type: 'azure',
+    baseUrlPlaceholder: 'https://YOUR-RESOURCE.openai.azure.com/openai',
+    supportsModelDiscovery: false,
+    requiresApiKey: true,
+    icon: '/logos/azure.svg',
+    // Azure requests use user-defined deployment names rather than model IDs.
+    models: [],
+  },
+
   anthropic: {
     id: 'anthropic',
     name: 'Claude',
@@ -173,6 +230,54 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     defaultBaseUrl: 'https://api.anthropic.com/v1',
     icon: '/logos/claude.svg',
     models: [
+      {
+        id: 'claude-opus-5',
+        name: 'Claude Opus 5',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'claude-sonnet-5',
+        name: 'Claude Sonnet 5',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'claude-fable-5',
+        name: 'Claude Fable 5',
+        contextWindow: 1000000,
+        outputWindow: 128000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
       {
         id: 'claude-opus-4-8',
         name: 'Claude Opus 4.8',
@@ -280,6 +385,38 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     defaultBaseUrl: 'https://generativelanguage.googleapis.com/v1beta',
     icon: '/logos/gemini.svg',
     models: [
+      {
+        id: 'gemini-3.6-flash',
+        name: 'Gemini 3.6 Flash',
+        contextWindow: 1048576,
+        outputWindow: 65536,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'gemini-3.5-flash-lite',
+        name: 'Gemini 3.5 Flash-Lite',
+        contextWindow: 1048576,
+        outputWindow: 65536,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
       {
         id: 'gemini-3.5-flash',
         name: 'Gemini 3.5 Flash',
@@ -701,6 +838,22 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     icon: '/logos/kimi.png',
     models: [
       {
+        id: 'kimi-k3',
+        name: 'Kimi K3',
+        contextWindow: 1048576,
+        outputWindow: 131072,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
         id: 'kimi-k2.7-code',
         name: 'Kimi K2.7 Code',
         contextWindow: 256000,
@@ -977,6 +1130,54 @@ export const PROVIDERS: Record<ProviderId, ProviderConfig> = {
     requiresApiKey: true,
     icon: '/logos/grok.svg',
     models: [
+      {
+        id: 'grok-4.5',
+        name: 'Grok 4.5',
+        contextWindow: 500000,
+        outputWindow: 500000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: true,
+            defaultEnabled: true,
+          },
+        },
+      },
+      {
+        id: 'grok-4.3',
+        name: 'Grok 4.3',
+        contextWindow: 1000000,
+        outputWindow: 30000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: true,
+            budgetAdjustable: true,
+            defaultEnabled: false,
+          },
+        },
+      },
+      {
+        id: 'grok-build-0.1',
+        name: 'Grok Build 0.1',
+        contextWindow: 256000,
+        outputWindow: 256000,
+        capabilities: {
+          streaming: true,
+          tools: true,
+          vision: true,
+          thinking: {
+            toggleable: false,
+            budgetAdjustable: false,
+            defaultEnabled: true,
+          },
+        },
+      },
       {
         id: 'grok-4.20-reasoning',
         name: 'Grok 4.20 Reasoning',
@@ -1288,6 +1489,11 @@ function getCompatThinkingBodyParams(
   const budget = pickThinkingBudget(capability, config);
 
   switch (capability.requestAdapter) {
+    case 'openai': {
+      const effort = pickThinkingEffort(capability, config);
+      return effort ? { reasoning_effort: effort } : undefined;
+    }
+
     case 'kimi':
     case 'xiaomi':
       if (mode === 'disabled') return { thinking: { type: 'disabled' } };
@@ -1437,7 +1643,8 @@ function shouldUseOpenAIResponsesApi(providerId: ProviderId, modelId: string): b
 
   return (
     /^gpt-5\.\d+-pro(?:-|$)/.test(modelId) ||
-    /^gpt-5\.[5-9](?:-|$)/.test(modelId) ||
+    /^gpt-5\.6(?:-|$)/.test(modelId) ||
+    /^gpt-5\.5(?:-|$)/.test(modelId) ||
     /^gpt-5\.[3-9]-codex(?:-|$)/.test(modelId)
   );
 }
@@ -1482,10 +1689,20 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   let model: LanguageModel;
 
   switch (providerType) {
+    case 'azure': {
+      const azure = createAzure({
+        apiKey: effectiveApiKey,
+        baseURL: normalizeAzureBaseUrl(effectiveBaseUrl),
+      });
+      model = azure(config.modelId);
+      break;
+    }
+
     case 'openai': {
       const openaiOptions: Parameters<typeof createOpenAI>[0] = {
         apiKey: effectiveApiKey,
         baseURL: effectiveBaseUrl,
+        name: config.providerId,
       };
 
       // For OpenAI-compatible providers (not native OpenAI), add a fetch
@@ -1520,26 +1737,43 @@ export function getModel(config: ModelConfig): ModelWithInfo {
               }
             }
           }
+
+          if (
+            providerId === 'kimi' &&
+            config.modelId === 'kimi-k3' &&
+            init?.body &&
+            typeof init.body === 'string'
+          ) {
+            try {
+              const body = JSON.parse(init.body);
+              restoreKimiReasoningInRequestBody(body);
+              init = { ...init, body: JSON.stringify(body) };
+            } catch {
+              /* leave body as-is */
+            }
+          }
           const response = await globalThis.fetch(url, init);
 
           // Recover reasoning that @ai-sdk/openai's chat schema drops: rewrite
           // streamed `reasoning_content` deltas into an inline <think> block
           // (the model below is wrapped with extractReasoningMiddleware to split
           // it back into first-class reasoning parts). No-op when absent.
-          const streamingReasoned = (() => {
-            let streaming = false;
-            if (init?.body && typeof init.body === 'string') {
-              try {
-                streaming = JSON.parse(init.body)?.stream === true;
-              } catch {
-                /* ignore request-body inspection failure */
-              }
+          let streaming = false;
+          if (init?.body && typeof init.body === 'string') {
+            try {
+              streaming = JSON.parse(init.body)?.stream === true;
+            } catch {
+              /* ignore request-body inspection failure */
             }
-            return streaming ? wrapResponseWithReasoning(response) : response;
-          })();
+          }
+          const normalizedReasoningResponse = streaming
+            ? wrapResponseWithReasoning(response)
+            : providerId === 'kimi' && config.modelId === 'kimi-k3'
+              ? await wrapJsonResponseWithReasoning(response)
+              : response;
 
           if (providerId !== 'lemonade') {
-            return streamingReasoned;
+            return normalizedReasoningResponse;
           }
 
           const contentType = response.headers.get('content-type') || '';
@@ -1589,9 +1823,16 @@ export function getModel(config: ModelConfig): ModelWithInfo {
       // show a thinking panel and the answer text stays clean. Native OpenAI
       // handles reasoning itself, so it is excluded.
       if (config.providerId !== 'openai') {
+        const middleware =
+          config.providerId === 'kimi' && config.modelId === 'kimi-k3'
+            ? [
+                createKimiReasoningPreservationMiddleware(),
+                extractReasoningMiddleware({ tagName: 'think' }),
+              ]
+            : extractReasoningMiddleware({ tagName: 'think' });
         model = wrapLanguageModel({
           model,
-          middleware: extractReasoningMiddleware({ tagName: 'think' }),
+          middleware,
         });
       }
       break;
@@ -1675,7 +1916,7 @@ export function getModel(config: ModelConfig): ModelWithInfo {
   }
 
   // Look up model info from the provider registry
-  const modelInfo = provider?.models.find((m) => m.id === config.modelId) || null;
+  const modelInfo = findModelById(config.providerId, provider?.models, config.modelId) ?? null;
 
   return { model, modelInfo };
 }
@@ -1729,5 +1970,5 @@ export function getProvider(providerId: ProviderId): ProviderConfig | undefined 
  */
 export function getModelInfo(providerId: ProviderId, modelId: string): ModelInfo | undefined {
   const provider = PROVIDERS[providerId];
-  return provider?.models.find((m) => m.id === modelId);
+  return findModelById(providerId, provider?.models, modelId);
 }
