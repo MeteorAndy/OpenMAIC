@@ -9,10 +9,8 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const temporaryDirectory = mkdtempSync(join(tmpdir(), 'openmaic-package-smoke-'));
 
 function run(command, args, options = {}) {
-  const executable =
-    process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : command;
-  const executableArgs =
-    process.platform === 'win32' ? ['/d', '/s', '/c', command, ...args] : args;
+  const executable = process.platform === 'win32' ? (process.env.ComSpec ?? 'cmd.exe') : command;
+  const executableArgs = process.platform === 'win32' ? ['/d', '/s', '/c', command, ...args] : args;
   return execFileSync(executable, executableArgs, {
     cwd: options.cwd ?? root,
     encoding: 'utf8',
