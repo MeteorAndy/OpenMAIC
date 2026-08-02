@@ -162,6 +162,8 @@ jobs:
 
       - name: Rust tests
         run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+        env:
+          TAURI_CONFIG: '{"bundle":{"resources":[]}}'
 
       - name: Build unsigned desktop release candidate
         run: pnpm exec tauri build --no-bundle --ci
