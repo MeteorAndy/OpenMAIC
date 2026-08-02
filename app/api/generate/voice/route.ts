@@ -86,7 +86,7 @@ export async function POST(req: NextRequest) {
     const managed = isServerConfiguredProvider('tts', providerId);
     const clientBaseUrl = managed ? undefined : body.ttsBaseUrl || undefined;
     if (clientBaseUrl) {
-      const ssrfError = await validateUrlForSSRF(clientBaseUrl);
+      const ssrfError = await validateUrlForSSRF(clientBaseUrl, { providerId });
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }

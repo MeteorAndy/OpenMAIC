@@ -140,13 +140,35 @@ export type ModelSelectorLogoProps = Omit<ComponentProps<'img'>, 'src' | 'alt'> 
     | (string & {});
 };
 
+const LOCAL_PROVIDER_LOGOS: Record<string, string> = {
+  'amazon-bedrock': '/logos/claude.svg',
+  anthropic: '/logos/claude.svg',
+  azure: '/logos/azure.svg',
+  deepseek: '/logos/deepseek.svg',
+  google: '/logos/gemini.svg',
+  'google-vertex': '/logos/gemini.svg',
+  groq: '/logos/browser.svg',
+  lmstudio: '/logos/ollama.svg',
+  minimax: '/logos/minimax.svg',
+  modelscope: '/logos/qwen.svg',
+  ollama: '/logos/ollama.svg',
+  openai: '/logos/openai.svg',
+  openrouter: '/logos/openrouter.svg',
+  qwen: '/logos/qwen.svg',
+  siliconflow: '/logos/siliconflow.svg',
+  xiaomi: '/logos/xiaomi.svg',
+  zai: '/logos/glm.svg',
+  zhipuai: '/logos/glm.svg',
+  'zhipuai-coding-plan': '/logos/glm.svg',
+};
+
 export const ModelSelectorLogo = ({ provider, className, ...props }: ModelSelectorLogoProps) => (
   <img
     {...props}
     alt={`${provider} logo`}
     className={cn('size-3 dark:invert', className)}
     height={12}
-    src={`https://models.dev/logos/${provider}.svg`}
+    src={LOCAL_PROVIDER_LOGOS[provider] ?? '/logos/browser.svg'}
     width={12}
   />
 );

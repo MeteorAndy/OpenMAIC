@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { lookupMock } = vi.hoisted(() => ({
+const { lookupMock, readFileMock } = vi.hoisted(() => ({
   lookupMock: vi.fn(),
+  readFileMock: vi.fn(),
 }));
 
 vi.mock('node:dns', () => ({
@@ -10,16 +11,30 @@ vi.mock('node:dns', () => ({
   },
 }));
 
+vi.mock('node:fs', () => ({
+  promises: {
+    readFile: readFileMock,
+  },
+}));
+
 const PRIVATE_NETWORK_BLOCK_MESSAGE =
   'Local/private network URLs are not allowed. If this is a self-hosted deployment or internal gateway (including split-horizon DNS), set ALLOW_LOCAL_NETWORKS=true to allow local network targets.';
 const ALLOW_LOCAL_NETWORKS_GUIDANCE = 'ALLOW_LOCAL_NETWORKS=true';
+const INFRASTRUCTURE_BLOCK_MESSAGE =
+  'Link-local, metadata, unspecified, and other infrastructure-sensitive addresses are not allowed.';
 const originalAllowLocalNetworks = process.env.ALLOW_LOCAL_NETWORKS;
+const originalDesktopRuntime = process.env.DESKTOP_RUNTIME;
+const originalTrustedEndpointsFile = process.env.DESKTOP_TRUSTED_ENDPOINTS_FILE;
 
 describe('validateUrlForSSRF', () => {
   beforeEach(() => {
     vi.resetModules();
     lookupMock.mockReset();
+    readFileMock.mockReset();
+    readFileMock.mockRejectedValue(new Error('allowlist unavailable'));
     delete process.env.ALLOW_LOCAL_NETWORKS;
+    delete process.env.DESKTOP_RUNTIME;
+    delete process.env.DESKTOP_TRUSTED_ENDPOINTS_FILE;
   });
 
   afterEach(() => {
@@ -28,6 +43,11 @@ describe('validateUrlForSSRF', () => {
     } else {
       process.env.ALLOW_LOCAL_NETWORKS = originalAllowLocalNetworks;
     }
+    if (originalDesktopRuntime === undefined) delete process.env.DESKTOP_RUNTIME;
+    else process.env.DESKTOP_RUNTIME = originalDesktopRuntime;
+    if (originalTrustedEndpointsFile === undefined)
+      delete process.env.DESKTOP_TRUSTED_ENDPOINTS_FILE;
+    else process.env.DESKTOP_TRUSTED_ENDPOINTS_FILE = originalTrustedEndpointsFile;
   });
 
   it('allows a public hostname when DNS resolves to a public IP', async () => {
@@ -89,8 +109,6 @@ describe('validateUrlForSSRF', () => {
       'http://172.16.5.4',
       'http://172.31.255.255',
       'http://192.168.1.10',
-      'http://169.254.169.254',
-      'http://0.0.0.0',
     ];
 
     for (const url of urls) {
@@ -100,22 +118,38 @@ describe('validateUrlForSSRF', () => {
     expect(lookupMock).not.toHaveBeenCalled();
   });
 
+  it('always rejects infrastructure-sensitive IPv4 literals', async () => {
+    process.env.ALLOW_LOCAL_NETWORKS = 'true';
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    for (const url of [
+      'http://169.254.169.254',
+      'http://100.100.100.200',
+      'http://0.0.0.0',
+      'http://224.0.0.1',
+    ]) {
+      await expect(validateUrlForSSRF(url)).resolves.toBe(INFRASTRUCTURE_BLOCK_MESSAGE);
+    }
+  });
+
   it('rejects private IPv6 literals and mapped loopback addresses', async () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
-    const urls = [
-      'http://[::1]',
-      'http://[fd00::1234]',
-      'http://[fe80::1]',
-      'http://[fec0::1]',
-      'http://[::ffff:127.0.0.1]',
-    ];
+    const urls = ['http://[::1]', 'http://[fd00::1234]', 'http://[::ffff:127.0.0.1]'];
 
     for (const url of urls) {
       await expect(validateUrlForSSRF(url)).resolves.toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
     }
 
     expect(lookupMock).not.toHaveBeenCalled();
+  });
+
+  it('always rejects infrastructure-sensitive IPv6 literals', async () => {
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    for (const url of ['http://[::]', 'http://[fe80::1]', 'http://[fec0::1]']) {
+      await expect(validateUrlForSSRF(url)).resolves.toBe(INFRASTRUCTURE_BLOCK_MESSAGE);
+    }
   });
 
   it('detects private IPv4 embedded in expanded and compressed ISATAP addresses', async () => {
@@ -176,11 +210,11 @@ describe('validateUrlForSSRF', () => {
 
     // 2002:7f00:0001:: embeds 127.0.0.1
     await expect(validateUrlForSSRF('http://[2002:7f00:0001::]')).resolves.toBe(
-      PRIVATE_NETWORK_BLOCK_MESSAGE,
+      INFRASTRUCTURE_BLOCK_MESSAGE,
     );
     // 2002:0a00:0001:: embeds 10.0.0.1
     await expect(validateUrlForSSRF('http://[2002:0a00:0001::]')).resolves.toBe(
-      PRIVATE_NETWORK_BLOCK_MESSAGE,
+      INFRASTRUCTURE_BLOCK_MESSAGE,
     );
     expect(lookupMock).not.toHaveBeenCalled();
   });
@@ -199,7 +233,7 @@ describe('validateUrlForSSRF', () => {
     // Client IPv4 127.0.0.1 XOR 0xFFFFFFFF = 0x80FFFFFE → hextets 80ff:fffe
     await expect(
       validateUrlForSSRF('http://[2001:0000:4136:e378:8000:63bf:80ff:fffe]'),
-    ).resolves.toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
+    ).resolves.toBe(INFRASTRUCTURE_BLOCK_MESSAGE);
     expect(lookupMock).not.toHaveBeenCalled();
   });
 
@@ -219,8 +253,7 @@ describe('validateUrlForSSRF', () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
     const result = await validateUrlForSSRF('https://attacker.com');
-    expect(result).toBe(PRIVATE_NETWORK_BLOCK_MESSAGE);
-    expect(result).toContain(ALLOW_LOCAL_NETWORKS_GUIDANCE);
+    expect(result).toContain('mixed public/local');
   });
 
   it('rejects hostnames when any DNS answer is private', async () => {
@@ -231,8 +264,8 @@ describe('validateUrlForSSRF', () => {
 
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
-    await expect(validateUrlForSSRF('https://mixed.example')).resolves.toBe(
-      PRIVATE_NETWORK_BLOCK_MESSAGE,
+    await expect(validateUrlForSSRF('https://mixed.example')).resolves.toContain(
+      'mixed public/local',
     );
   });
 
@@ -242,7 +275,7 @@ describe('validateUrlForSSRF', () => {
     const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
 
     await expect(validateUrlForSSRF('https://isatap.example')).resolves.toBe(
-      PRIVATE_NETWORK_BLOCK_MESSAGE,
+      INFRASTRUCTURE_BLOCK_MESSAGE,
     );
   });
 
@@ -255,6 +288,56 @@ describe('validateUrlForSSRF', () => {
     await expect(validateUrlForSSRF('http://192.168.1.10')).resolves.toBeNull();
     await expect(validateUrlForSSRF('https://internal.example')).resolves.toBeNull();
     expect(lookupMock).not.toHaveBeenCalled();
+  });
+
+  it('allows loopback only for an explicit local provider in Desktop Edition', async () => {
+    process.env.DESKTOP_RUNTIME = '1';
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    await expect(
+      validateUrlForSSRF('http://127.0.0.1:11434/v1', { providerId: 'ollama' }),
+    ).resolves.toBeNull();
+    await expect(
+      validateUrlForSSRF('http://127.0.0.1:11434/v1', { providerId: 'openai' }),
+    ).resolves.toContain('not trusted');
+  });
+
+  it('requires an exact approved origin for a private LAN endpoint on Desktop', async () => {
+    process.env.DESKTOP_RUNTIME = '1';
+    process.env.DESKTOP_TRUSTED_ENDPOINTS_FILE = 'trusted.json';
+    readFileMock.mockResolvedValue('["http://192.168.1.20:11434"]');
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    await expect(validateUrlForSSRF('http://192.168.1.20:11434/v1')).resolves.toBeNull();
+    await expect(validateUrlForSSRF('http://192.168.1.20:8080/v1')).resolves.toContain(
+      'not trusted',
+    );
+  });
+
+  it('does not inherit local approval across redirects', async () => {
+    process.env.DESKTOP_RUNTIME = '1';
+    process.env.DESKTOP_TRUSTED_ENDPOINTS_FILE = 'trusted.json';
+    readFileMock.mockResolvedValue('["http://192.168.1.20:11434"]');
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    await expect(
+      validateUrlForSSRF('http://192.168.1.20:11434/redirected', { redirect: true }),
+    ).resolves.toContain('not trusted');
+  });
+
+  it('blocks mixed public/private DNS answers even for an approved Desktop origin', async () => {
+    process.env.DESKTOP_RUNTIME = '1';
+    process.env.DESKTOP_TRUSTED_ENDPOINTS_FILE = 'trusted.json';
+    readFileMock.mockResolvedValue('["https://mixed.example:443"]');
+    lookupMock.mockResolvedValue([
+      { address: '93.184.216.34', family: 4 },
+      { address: '192.168.1.20', family: 4 },
+    ]);
+    const { validateUrlForSSRF } = await import('@/lib/server/ssrf-guard');
+
+    await expect(validateUrlForSSRF('https://mixed.example')).resolves.toContain(
+      'mixed public/local',
+    );
   });
 
   it('fails closed when DNS lookup errors', async () => {

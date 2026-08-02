@@ -78,6 +78,7 @@ describe('POST /api/proxy-media', () => {
     expect(mocks.validateUrlForSSRF).toHaveBeenNthCalledWith(
       2,
       'https://cdn.example.com/final.png',
+      { redirect: true },
     );
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });

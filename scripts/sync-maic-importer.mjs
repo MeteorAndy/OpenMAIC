@@ -16,11 +16,16 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const root = path.resolve(__dirname, '..');
 const srcDir = path.join(root, 'packages/@openmaic/importer/dist');
 const destDir = path.join(root, 'public/vendor/maic-importer');
+const pdfWorker = path.join(
+  root,
+  'packages/@openmaic/importer/node_modules/pdfjs-dist/legacy/build/pdf.worker.min.mjs',
+);
 
 try {
   await stat(srcDir);
+  await stat(pdfWorker);
 } catch {
-  console.error(`[sync-maic-importer] missing dist: ${srcDir}`);
+  console.error('[sync-maic-importer] importer dist or PDF worker is missing.');
   console.error('Run `cd packages/@openmaic/importer && pnpm run build` first.');
   process.exit(1);
 }
@@ -28,6 +33,7 @@ try {
 await rm(destDir, { recursive: true, force: true });
 await mkdir(destDir, { recursive: true });
 await cp(srcDir, destDir, { recursive: true });
+await cp(pdfWorker, path.join(destDir, 'pdf.worker.min.mjs'));
 
 console.log(
   `[sync-maic-importer] copied ${path.relative(root, srcDir)} → ${path.relative(root, destDir)}`,

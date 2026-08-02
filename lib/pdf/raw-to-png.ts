@@ -35,9 +35,7 @@ export function rawToPngBuffer(
     height > MAX_DIMENSION ||
     width * height > MAX_PIXELS
   ) {
-    throw new Error(
-      `Invalid or oversized image dimensions: ${width}x${height}`,
-    );
+    throw new Error(`Invalid or oversized image dimensions: ${width}x${height}`);
   }
 
   const png = new PNG({ width, height });

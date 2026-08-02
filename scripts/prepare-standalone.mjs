@@ -18,6 +18,21 @@ if (!existsSync(join(standaloneDir, 'server.js'))) {
   console.error('[prepare-standalone] .next/standalone/server.js missing — run `pnpm build` first');
   process.exit(1);
 }
+function isRuntimePath(sourcePath) {
+  const normalizedPath = sourcePath.replaceAll('\\', '/');
+  return (
+    !normalizedPath.includes('/src-tauri/') &&
+    !normalizedPath.endsWith('.d.ts') &&
+    !normalizedPath.endsWith('.d.mts') &&
+    !normalizedPath.endsWith('.d.cts') &&
+    !normalizedPath.endsWith('.map') &&
+    !normalizedPath.endsWith('.ts') &&
+    !normalizedPath.endsWith('.tsx') &&
+    !normalizedPath.endsWith('.mts') &&
+    !normalizedPath.endsWith('.cts')
+  );
+}
+
 const copyOptions = {
   recursive: true,
   // Follow pnpm's node_modules symlinks and copy real files (Windows EPERM on
@@ -27,17 +42,19 @@ const copyOptions = {
   // binaries, 9GB+) into .next/standalone. Exclude it or the bundle balloons.
   // Type declarations and source maps are also compile-time-only; excluding
   // them keeps NSIS below Windows' source-path limit and shrinks the installer.
-  filter: (s) =>
-    !s.includes('src-tauri') &&
-    !s.endsWith('.d.ts') &&
-    !s.endsWith('.d.mts') &&
-    !s.endsWith('.d.cts') &&
-    !s.endsWith('.map') &&
-    !s.endsWith('.ts') &&
-    !s.endsWith('.tsx') &&
-    !s.endsWith('.mts') &&
-    !s.endsWith('.cts'),
+  filter: (sourcePath) => {
+    const normalizedPath = sourcePath.replaceAll('\\', '/');
+    return (
+      !normalizedPath.includes('/node_modules/.pnpm/') &&
+      !normalizedPath.endsWith('/node_modules/.pnpm') &&
+      isRuntimePath(sourcePath)
+    );
+  },
 };
+
+// Resolved package sources live inside pnpm's store. Copy their contents into
+// ordinary nested package directories without copying the store itself.
+const packageCopyOptions = { ...copyOptions, filter: isRuntimePath };
 
 // standalone already includes a traced node_modules + server.js
 cpSync(standaloneDir, dest, copyOptions);
@@ -59,7 +76,7 @@ function copyPackageTree(packageName, sourceNodeModules, targetNodeModules, ance
 
   const target = join(targetNodeModules, ...packageName.split('/'));
   mkdirSync(targetNodeModules, { recursive: true });
-  cpSync(source, target, copyOptions);
+  cpSync(source, target, packageCopyOptions);
 
   const manifest = JSON.parse(readFileSync(join(source, 'package.json'), 'utf8'));
   const childAncestors = new Set(ancestors).add(source);

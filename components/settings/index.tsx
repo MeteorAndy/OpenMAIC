@@ -52,7 +52,7 @@ import { TTS_PROVIDERS } from '@/lib/audio/constants';
 import type { TTSProviderId } from '@/lib/audio/types';
 import { ASRSettings } from './asr-settings';
 import { ASR_PROVIDERS } from '@/lib/audio/constants';
-import type { ASRProviderId } from '@/lib/audio/types';
+import type { ASRProviderId, BuiltInASRProviderId } from '@/lib/audio/types';
 import { WebSearchSettings } from './web-search-settings';
 import { WEB_SEARCH_PROVIDERS, getWebSearchProviderDisplayName } from '@/lib/web-search/constants';
 import type { WebSearchProviderId } from '@/lib/web-search/types';
@@ -165,7 +165,7 @@ function getASRProviderName(providerId: ASRProviderId, t: (key: string) => strin
     'azure-asr': t('settings.providerAzureASR'),
     'lemonade-asr': t('settings.providerLemonadeASR'),
   };
-  return names[providerId] || providerId;
+  return names[providerId] || ASR_PROVIDERS[providerId as BuiltInASRProviderId]?.name || providerId;
 }
 
 // ─── Image/Video provider name helpers ───

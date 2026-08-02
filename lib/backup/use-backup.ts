@@ -12,6 +12,7 @@ import {
   BACKUP_EXTENSION,
 } from '@/lib/backup/db-backup';
 import { createLogger } from '@/lib/logger';
+import { flushStageSave } from '@/lib/store/stage';
 
 const log = createLogger('Backup');
 
@@ -19,9 +20,9 @@ const MAX_SAFE_SIZE = 200 * 1024 * 1024;
 
 /**
  * React layer over db-backup primitives. Mirrors use-import-classroom's shape:
- * file input ref, size warn, QuotaExceededError handling. Restore ends with
- * window.location.reload() — bulkPut leaves zustand/React holding stale refs,
- * same reason clearCache reloads.
+ * file input ref, size warn, QuotaExceededError handling. Restore drains the
+ * editor write queue before the replacement transaction and reloads so no
+ * Zustand state can retain a reference to the replaced workspace.
  */
 export function useBackup() {
   const { t } = useI18n();
@@ -61,6 +62,7 @@ export function useBackup() {
       setIsRestoring(true);
       const toastId = toast.loading(t('settings.restoreButton'));
       try {
+        await flushStageSave();
         // File extends Blob; importAllTables reads it as a ZIP directly.
         await importAllTables(file, db);
         toast.success(t('settings.restoreSuccess'), { id: toastId });

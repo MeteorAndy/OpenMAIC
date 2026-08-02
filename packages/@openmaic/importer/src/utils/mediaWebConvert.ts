@@ -27,14 +27,12 @@ type PdfPage = {
 };
 type PdfDocument = { getPage(n: number): Promise<PdfPage>; destroy(): Promise<void> };
 type PdfjsLib = {
-  version?: string;
   GlobalWorkerOptions: { workerSrc: string };
   getDocument(args: { data: Uint8Array; verbosity?: number }): { promise: Promise<PdfDocument> };
 };
 const pdfjs = pdfjsLib as unknown as PdfjsLib;
 
-const PDFJS_CDN_VERSION = pdfjs.version || '4.8.69';
-pdfjs.GlobalWorkerOptions.workerSrc = `https://cdn.jsdelivr.net/npm/pdfjs-dist@${PDFJS_CDN_VERSION}/legacy/build/pdf.worker.min.mjs`;
+pdfjs.GlobalWorkerOptions.workerSrc = '/vendor/maic-importer/pdf.worker.min.mjs';
 
 type UtifPage = {
   width: number;

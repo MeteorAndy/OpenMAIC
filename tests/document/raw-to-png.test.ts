@@ -25,18 +25,14 @@ describe('rawToPngBuffer', () => {
     const decoded = readPng(png);
     expect(decoded.width).toBe(2);
     expect(decoded.height).toBe(1);
-    expect(Array.from(decoded.data as Uint8Array)).toEqual([
-      255, 0, 0, 255, 0, 255, 0, 255,
-    ]);
+    expect(Array.from(decoded.data as Uint8Array)).toEqual([255, 0, 0, 255, 0, 255, 0, 255]);
   });
 
   it('passes a 4-channel RGBA buffer through unchanged', () => {
     const rgba = Buffer.from([10, 20, 30, 40, 50, 60, 70, 80]);
     const png = rawToPngBuffer(rgba, 2, 1, 4);
     const decoded = readPng(png);
-    expect(Array.from(decoded.data as Uint8Array)).toEqual([
-      10, 20, 30, 40, 50, 60, 70, 80,
-    ]);
+    expect(Array.from(decoded.data as Uint8Array)).toEqual([10, 20, 30, 40, 50, 60, 70, 80]);
   });
 
   it('expands a 1-channel grayscale buffer to opaque RGBA', () => {
@@ -52,9 +48,7 @@ describe('rawToPngBuffer', () => {
     const ga = Buffer.from([128, 200, 50, 255]); // (gray,alpha) × 2 pixels
     const png = rawToPngBuffer(ga, 2, 1, 2);
     const decoded = readPng(png);
-    expect(Array.from(decoded.data as Uint8Array)).toEqual([
-      128, 128, 128, 200, 50, 50, 50, 255,
-    ]);
+    expect(Array.from(decoded.data as Uint8Array)).toEqual([128, 128, 128, 200, 50, 50, 50, 255]);
   });
 
   it('throws on unsupported channel counts', () => {

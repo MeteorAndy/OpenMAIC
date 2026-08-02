@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>恢复模式 - OpenMAIC Desktop</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: 'Segoe UI', sans-serif;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #f7f8fa;
+        color: #20242a;
+        display: grid;
+        place-items: center;
+      }
+      main {
+        width: min(560px, calc(100vw - 48px));
+      }
+      h1 {
+        margin: 0 0 10px;
+        font-size: 24px;
+        letter-spacing: 0;
+      }
+      p {
+        margin: 0 0 24px;
+        color: #5d6673;
+        line-height: 1.65;
+        overflow-wrap: anywhere;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      button {
+        min-height: 38px;
+        border: 1px solid #c9ced6;
+        border-radius: 6px;
+        padding: 0 14px;
+        background: #fff;
+        color: #20242a;
+        font: inherit;
+        cursor: pointer;
+      }
+      button.primary {
+        border-color: #1677ff;
+        background: #1677ff;
+        color: #fff;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: wait;
+      }
+      #status {
+        min-height: 22px;
+        margin-top: 18px;
+        font-size: 13px;
+        color: #5d6673;
+        overflow-wrap: anywhere;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #17191d;
+          color: #f2f3f5;
+        }
+        p,
+        #status {
+          color: #aeb5bf;
+        }
+        button {
+          background: #23262b;
+          border-color: #454b54;
+          color: #f2f3f5;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>OpenMAIC Desktop 恢复模式</h1>
+      <p id="reason">本地服务当前无法安全运行。工作区数据尚未被修改。</p>
+      <div class="actions">
+        <button class="primary" id="retry">重试</button>
+        <button id="diagnostics">导出诊断信息</button>
+        <button id="logs">打开日志目录</button>
+        <button id="quit">退出</button>
+      </div>
+      <div id="status" role="status"></div>
+    </main>
+    <script>
+      const invoke = (command) => window.__TAURI__.core.invoke(command);
+      const status = document.getElementById('status');
+      const retry = document.getElementById('retry');
+      const reason = new URLSearchParams(window.location.search).get('reason');
+      if (reason) document.getElementById('reason').textContent = reason;
+
+      retry.addEventListener('click', async () => {
+        retry.disabled = true;
+        status.textContent = '正在重试本地服务...';
+        try {
+          await invoke('retry_local_service');
+        } catch (error) {
+          status.textContent = String(error);
+          retry.disabled = false;
+        }
+      });
+      document.getElementById('diagnostics').addEventListener('click', async () => {
+        status.textContent = '正在准备诊断信息...';
+        try {
+          const path = await invoke('export_diagnostic_bundle');
+          status.textContent = path ? `已导出到 ${path}` : '已取消导出';
+        } catch (error) {
+          status.textContent = String(error);
+        }
+      });
+      document.getElementById('logs').addEventListener('click', async () => {
+        try {
+          await invoke('open_log_directory');
+        } catch (error) {
+          status.textContent = String(error);
+        }
+      });
+      document.getElementById('quit').addEventListener('click', () => invoke('quit_desktop'));
+    </script>
+  </body>
+</html>

@@ -52,7 +52,7 @@ export async function POST(request: NextRequest) {
         return apiError('INVALID_URL', 502, 'Invalid redirect Location');
       }
       // Re-validate each redirect hop to prevent redirect-to-internal SSRF (#398)
-      const hopError = await validateUrlForSSRF(nextUrl);
+      const hopError = await validateUrlForSSRF(nextUrl, { redirect: true });
       if (hopError) return apiError('INVALID_URL', 403, hopError);
       currentUrl = nextUrl;
     }

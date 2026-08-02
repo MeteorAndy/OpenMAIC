@@ -1277,7 +1277,21 @@ export const ASR_PROVIDERS: Record<BuiltInASRProviderId, ASRProviderConfig> = {
     models: [],
     defaultModelId: '',
     // apiKey format: "appId:accessKey" — same scheme as doubao-tts; reuse that key.
-    supportedLanguages: ['auto', 'zh', 'en', 'ja', 'ko', 'es', 'fr', 'de', 'ru', 'ar', 'pt', 'it', 'hi'],
+    supportedLanguages: [
+      'auto',
+      'zh',
+      'en',
+      'ja',
+      'ko',
+      'es',
+      'fr',
+      'de',
+      'ru',
+      'ar',
+      'pt',
+      'it',
+      'hi',
+    ],
     supportedFormats: ['mp3', 'wav', 'ogg'],
   },
 };

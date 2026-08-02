@@ -33,7 +33,8 @@ import {
   resolveSelectedModel,
   isLLMProviderConfigured,
 } from '@/lib/store/settings-validation';
-import { createKVPersistStorage, purgeLegacyPersistKey } from '@/lib/store/kv-persist';
+import { purgeLegacyPersistKey } from '@/lib/store/kv-persist';
+import { createDesktopCredentialPersistStorage } from '@/lib/store/desktop-credential-persist';
 
 const log = createLogger('Settings');
 
@@ -683,7 +684,13 @@ function ensureBuiltInAudioProviders(state: Partial<SettingsState>): void {
   if (state.asrProvidersConfig) {
     for (const providerId of Object.keys(ASR_PROVIDERS) as ASRProviderId[]) {
       if (!state.asrProvidersConfig[providerId]) {
-        state.asrProvidersConfig[providerId] = defaultAudioConfig.asrProvidersConfig[providerId];
+        state.asrProvidersConfig[providerId] = defaultAudioConfig.asrProvidersConfig[
+          providerId
+        ] ?? {
+          apiKey: '',
+          baseUrl: '',
+          enabled: false,
+        };
       }
     }
   }
@@ -1826,7 +1833,7 @@ export const useSettingsStore = create<SettingsState>()(
       name: 'settings-storage',
       // `Partial<SettingsState>` because `migrate` below returns a partial —
       // that is what zustand infers as the persisted shape here.
-      storage: createKVPersistStorage<Partial<SettingsState>>('account', {
+      storage: createDesktopCredentialPersistStorage<Partial<SettingsState>>('account', {
         // One recovery attempt when a write is refused because hydration never
         // succeeded — the backend may have come back since. Routed through a
         // variable assigned below rather than naming the store directly: a

@@ -2,9 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, feat/tauri-desktop]
   pull_request:
-    branches: [main, feat/maic-editor-v0, feat/maic-editor-v1, runtime-server-backend]
+    branches:
+      [main, feat/tauri-desktop, feat/maic-editor-v0, feat/maic-editor-v1, runtime-server-backend]
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -138,3 +139,29 @@ jobs:
           name: playwright-report
           path: playwright-report/
           retention-days: 7
+
+  desktop:
+    name: Desktop Build & Rust Tests
+    if: github.ref == 'refs/heads/feat/tauri-desktop' || github.base_ref == 'feat/tauri-desktop'
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.11.0
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Verify pinned Node sidecar
+        shell: pwsh
+        run: ./scripts/prepare-windows-sidecar.ps1
+
+      - name: Rust tests
+        run: cargo test --locked --manifest-path src-tauri/Cargo.toml
+
+      - name: Build unsigned desktop release candidate
+        run: pnpm exec tauri build --no-bundle --ci

@@ -589,7 +589,11 @@ export async function exportDatabase(chatOptions: ChatStorageOptions = {}): Prom
   // Backups must not strand courses that have not yet been opened since cutover.
   // Route them through the normal lazy-migration seam before enumerating aggregates.
   const legacyStages = await getLegacyDocumentStore().listStages();
-  await Promise.all(legacyStages.map((stage) => accessDocument(stage.id)));
+  await Promise.all(
+    legacyStages.map((stage) =>
+      accessDocument(stage.id, { storageSharedLockHeld: chatOptions.globalLockHeld }),
+    ),
+  );
   const summaries = await documentStore.listDocuments();
   const storedDocuments = (
     await Promise.all(summaries.map((summary) => documentStore.loadDocument(summary.id)))
@@ -706,11 +710,15 @@ export async function importDatabase(
       // Record the pre-import deletion state alongside the document pre-image:
       // a failed import rolls the document back, so it must roll this back too.
       const wasDeleted = isStageDeleted(document.stage.id);
-      await mutateDocument(document.stage.id, async (_existing, store) => {
-        const preImage = (await store.loadDocument(document.stage.id)) as AppDocument | null;
-        await store.saveDocument(document);
-        importedDocuments.push({ id: document.stage.id, preImage, wasDeleted });
-      });
+      await mutateDocument(
+        document.stage.id,
+        async (_existing, store) => {
+          const preImage = (await store.loadDocument(document.stage.id)) as AppDocument | null;
+          await store.saveDocument(document);
+          importedDocuments.push({ id: document.stage.id, preImage, wasDeleted });
+        },
+        { storageSharedLockHeld: chatOptions.globalLockHeld },
+      );
       // Explicit document (re)creation: a backup may restore a stage deleted
       // earlier this session under the same id. Lift the deleted flag so later
       // edits of the restored document persist instead of being dropped. (The
@@ -731,7 +739,7 @@ export async function importDatabase(
       }
     }
 
-    await withRuntimeStorageSharedLock(async () => {
+    const restoreRuntimeAndLegacyRows = async () => {
       const restoredChatStageIds =
         data.chatSessions === undefined
           ? []
@@ -813,7 +821,9 @@ export async function importDatabase(
         await restoreRows();
       }
       log.info('Database imported successfully');
-    });
+    };
+    if (chatOptions.globalLockHeld) await restoreRuntimeAndLegacyRows();
+    else await withRuntimeStorageSharedLock(restoreRuntimeAndLegacyRows);
   } catch (error) {
     for (const { key, preImage } of importedCurrentScenes.reverse()) {
       try {
@@ -825,10 +835,14 @@ export async function importDatabase(
     }
     for (const { id, preImage, wasDeleted } of importedDocuments.reverse()) {
       try {
-        await mutateDocument(id, async (_document, store) => {
-          if (preImage) await store.saveDocument(preImage);
-          else await store.deleteDocument(id);
-        });
+        await mutateDocument(
+          id,
+          async (_document, store) => {
+            if (preImage) await store.saveDocument(preImage);
+            else await store.deleteDocument(id);
+          },
+          { storageSharedLockHeld: chatOptions.globalLockHeld },
+        );
         // The rollback reinstated the pre-import world; reinstate the deletion
         // state the import lifted, or the rolled-back (absent) document would
         // stay writable and an outstanding flush could recreate it. Re-marking
@@ -844,6 +858,23 @@ export async function importDatabase(
     }
     throw error;
   }
+}
+
+/** Replace the authoritative document/runtime stores under one maintenance epoch. */
+export async function replaceDatabase(
+  data: Parameters<typeof importDatabase>[0],
+  chatOptions: ChatStorageOptions = {},
+): Promise<void> {
+  const replace = async (): Promise<void> => {
+    const { bumpGeneration } = await import('@/lib/document-store/storage-generation');
+    await bumpGeneration();
+    await getRuntimeStore().deleteAllRuntime();
+    await deleteAllDocuments();
+    await importDatabase(data, { ...chatOptions, globalLockHeld: true });
+  };
+
+  if (chatOptions.globalLockHeld) return replace();
+  return withRuntimeStorageExclusiveLock(replace);
 }
 
 // ==================== Convenience Query Functions ====================

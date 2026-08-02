@@ -1,10 +1,52 @@
 <!doctype html>
-<html>
-  <head><title>OpenMAIC</title></head>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>正在启动 - OpenMAIC Desktop</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        font-family: 'Segoe UI', sans-serif;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        background: #f7f8fa;
+        color: #20242a;
+      }
+      main {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+        font-size: 15px;
+      }
+      .spinner {
+        width: 20px;
+        height: 20px;
+        border: 2px solid #c5cad1;
+        border-top-color: #1677ff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          background: #17191d;
+          color: #f2f3f5;
+        }
+      }
+    </style>
+  </head>
   <body>
-    <!-- Placeholder frontend for Tauri's generate_context!. The real UI is served
-         by the node sidecar over http://127.0.0.1:47823 (WebviewUrl::External),
-         so this file is never shown — it only satisfies Tauri's requirement for
-         a non-empty frontendDist. -->
+    <main>
+      <span class="spinner" aria-hidden="true"></span><span>正在启动 OpenMAIC Desktop</span>
+    </main>
   </body>
 </html>

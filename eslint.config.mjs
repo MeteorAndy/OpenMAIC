@@ -33,6 +33,9 @@ const eslintConfig = defineConfig([
     'out/**',
     'build/**',
     'next-env.d.ts',
+    // Tauri build output and assembled standalone server staging:
+    'src-tauri/target/**',
+    'src-tauri/s/**',
     // Third-party / vendored packages (not our code):
     'packages/docs/**',
     'packages/mathml2omml/**',

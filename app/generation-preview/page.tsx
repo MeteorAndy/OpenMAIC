@@ -661,7 +661,8 @@ function GenerationPreviewContent() {
                               directive ||
                               'Teach in the language that matches the user requirement.',
                             courseTitle: evt.courseTitle || title,
-                            taskEngineMode: evt.taskEngineMode === true || evt.effectiveTaskEngineMode === true,
+                            taskEngineMode:
+                              evt.taskEngineMode === true || evt.effectiveTaskEngineMode === true,
                           });
                           return;
                         } else if (evt.type === 'error') {
@@ -1040,13 +1041,9 @@ function GenerationPreviewContent() {
           const audioId = `tts_${action.id}`;
           action.audioId = audioId;
           try {
-            await generateAndStoreTTS(
-              audioId,
-              action.text,
-              languageDirective,
-              signal,
-              { maxRetries: MAX_RETRIES },
-            );
+            await generateAndStoreTTS(audioId, action.text, languageDirective, signal, {
+              maxRetries: MAX_RETRIES,
+            });
           } catch (err) {
             if (isAbortError(err)) throw err;
 

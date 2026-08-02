@@ -173,7 +173,12 @@ export function ProviderConfigPanel({
       const response = await fetch('/api/provider/probe-models', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ baseUrl: effectiveBaseUrl, apiKey, modelsUrl }),
+        body: JSON.stringify({
+          providerId: provider.id,
+          baseUrl: effectiveBaseUrl,
+          apiKey,
+          modelsUrl,
+        }),
       });
       const data = await response.json();
       if (response.ok && data.success) {
@@ -199,7 +204,7 @@ export function ProviderConfigPanel({
       setFetchStatus('error');
       setFetchMessage(t('settings.fetchModelsFailed'));
     }
-  }, [apiKey, effectiveBaseUrl, modelsUrl, onModelsFetched, t]);
+  }, [apiKey, effectiveBaseUrl, modelsUrl, onModelsFetched, provider.id, t]);
 
   const models = providersConfig[provider.id]?.models || [];
   const isServerConfigured = providersConfig[provider.id]?.isServerConfigured;

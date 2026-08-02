@@ -22,6 +22,7 @@ import { useUserProfileStore } from '@/lib/store/user-profile';
 import { toast } from 'sonner';
 import { createLogger } from '@/lib/logger';
 import { useBackup } from '@/lib/backup/use-backup';
+import { TrustedProviderEndpoints } from './trusted-provider-endpoints';
 
 const log = createLogger('GeneralSettings');
 
@@ -198,6 +199,8 @@ export function GeneralSettings() {
 
       {/* Usage statistics dashboard */}
       <UsageDashboard />
+
+      <TrustedProviderEndpoints />
 
       {/* Danger Zone - Clear Cache */}
       <div className="relative rounded-xl border border-destructive/30 bg-destructive/[0.03] dark:bg-destructive/[0.06] overflow-hidden">

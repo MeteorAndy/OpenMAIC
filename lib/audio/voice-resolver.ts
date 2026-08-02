@@ -123,8 +123,9 @@ export function resolveAgentVoice(
     const first = enabledProviders[0];
     if (first.voices.length > 0) {
       const g = inferAgentGender(agent);
-      const matched =
-        g ? first.voices.find((v) => voiceGenderOf(first.providerId, v.id) === g)?.id : undefined;
+      const matched = g
+        ? first.voices.find((v) => voiceGenderOf(first.providerId, v.id) === g)?.id
+        : undefined;
       return {
         providerId: first.providerId,
         voiceId: matched ?? first.voices[agentIndex % first.voices.length].id,

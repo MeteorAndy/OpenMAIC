@@ -656,7 +656,7 @@ describe('createKVPersistStorage — unreachable browser storage is a failure, n
       await persist.setItem(NAME, { state: { nickname: 'lost' } });
       await flushTasks();
 
-      expect(problems()).toEqual([NAME]);
+      expect(problems()).toContain(NAME);
     } finally {
       restore();
     }

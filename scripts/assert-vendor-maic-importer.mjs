@@ -14,23 +14,27 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const entry = path.join(root, 'public/vendor/maic-importer/index.js');
-const rel = path.relative(root, entry);
+const requiredFiles = [
+  path.join(root, 'public/vendor/maic-importer/index.js'),
+  path.join(root, 'public/vendor/maic-importer/pdf.worker.min.mjs'),
+];
 
-try {
-  const info = await stat(entry);
-  if (!info.isFile() || info.size === 0) {
-    throw new Error('present but not a non-empty file');
+for (const file of requiredFiles) {
+  const rel = path.relative(root, file);
+  try {
+    const info = await stat(file);
+    if (!info.isFile() || info.size === 0) {
+      throw new Error('present but not a non-empty file');
+    }
+  } catch {
+    console.error(`\n[assert-vendor] Missing desktop importer asset: ${rel}`);
+    console.error('[assert-vendor] The importer bundle and its PDF worker are produced by');
+    console.error('[assert-vendor] the postinstall sync step. To fix:');
+    console.error(
+      '[assert-vendor]   pnpm --filter @openmaic/importer build && pnpm run sync:maic-importer',
+    );
+    console.error('[assert-vendor] (a normal `pnpm install` runs both via postinstall).\n');
+    process.exit(1);
   }
-} catch {
-  console.error(`\n[assert-vendor] Missing PPTX parser bundle: ${rel}`);
-  console.error('[assert-vendor] It is loaded at runtime via /vendor/maic-importer/index.js');
-  console.error('[assert-vendor] and is produced by the postinstall sync step. To fix:');
-  console.error(
-    '[assert-vendor]   pnpm --filter @openmaic/importer build && pnpm run sync:maic-importer',
-  );
-  console.error('[assert-vendor] (a normal `pnpm install` runs both via postinstall).\n');
-  process.exit(1);
+  console.log(`[assert-vendor] ok: ${rel}`);
 }
-
-console.log(`[assert-vendor] ok: ${rel}`);

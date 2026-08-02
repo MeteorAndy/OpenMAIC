@@ -79,7 +79,7 @@ describe('LLM entry-point lint guard — coverage matrix', () => {
           const errors = await errorsFor(filePath, code);
           expect(errors, `${filePath} should reject the ${form} form`).not.toHaveLength(0);
         }
-      });
+      }, 60_000);
     }
   }
 

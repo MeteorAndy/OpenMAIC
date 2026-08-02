@@ -12,6 +12,16 @@ function bufToHex(buf: ArrayBuffer): string {
     .join('');
 }
 
+/** Compare secrets without exiting early on a mismatched byte. */
+function constantTimeEqual(actual: string, expected: string): boolean {
+  const length = Math.max(actual.length, expected.length);
+  let mismatch = actual.length ^ expected.length;
+  for (let index = 0; index < length; index++) {
+    mismatch |= (actual.charCodeAt(index) || 0) ^ (expected.charCodeAt(index) || 0);
+  }
+  return mismatch === 0;
+}
+
 /** Verify an HMAC-signed token using Web Crypto API (Edge-compatible) */
 async function verifyToken(token: string, accessCode: string): Promise<boolean> {
   const dotIndex = token.indexOf('.');
@@ -42,6 +52,11 @@ async function verifyToken(token: string, accessCode: string): Promise<boolean> 
 }
 
 export async function middleware(request: NextRequest) {
+  const desktopRuntime = process.env.DESKTOP_RUNTIME === '1';
+  if (desktopRuntime) {
+    return desktopMiddleware(request);
+  }
+
   const accessCode = process.env.ACCESS_CODE;
   if (!accessCode) {
     return NextResponse.next();
@@ -72,6 +87,67 @@ export async function middleware(request: NextRequest) {
   return NextResponse.next();
 }
 
+function desktopMiddleware(request: NextRequest): NextResponse {
+  const serviceOrigin = process.env.DESKTOP_SERVICE_ORIGIN;
+  const authToken = process.env.DESKTOP_AUTH_TOKEN;
+  if (!serviceOrigin || !authToken) {
+    return NextResponse.json(
+      {
+        success: false,
+        errorCode: 'DESKTOP_RUNTIME_INVALID',
+        error: 'Desktop runtime unavailable',
+      },
+      { status: 503 },
+    );
+  }
+
+  let expectedHost: string;
+  try {
+    expectedHost = new URL(serviceOrigin).host.toLowerCase();
+  } catch {
+    return NextResponse.json(
+      {
+        success: false,
+        errorCode: 'DESKTOP_RUNTIME_INVALID',
+        error: 'Desktop runtime unavailable',
+      },
+      { status: 503 },
+    );
+  }
+
+  if (request.headers.get('host')?.toLowerCase() !== expectedHost) {
+    return NextResponse.json(
+      { success: false, errorCode: 'INVALID_HOST', error: 'Invalid desktop service host' },
+      { status: 421 },
+    );
+  }
+
+  const { pathname } = request.nextUrl;
+  if (pathname === '/api/health') {
+    return NextResponse.next();
+  }
+
+  if (!['GET', 'HEAD'].includes(request.method)) {
+    const origin = request.headers.get('origin');
+    if (!origin || origin !== serviceOrigin) {
+      return NextResponse.json(
+        { success: false, errorCode: 'INVALID_ORIGIN', error: 'Invalid desktop request origin' },
+        { status: 403 },
+      );
+    }
+  }
+
+  const token = request.cookies.get('openmaic_desktop')?.value ?? '';
+  if (constantTimeEqual(token, authToken)) {
+    return NextResponse.next();
+  }
+
+  return NextResponse.json(
+    { success: false, errorCode: 'INVALID_DESKTOP_SESSION', error: 'Desktop session required' },
+    { status: 401 },
+  );
+}
+
 export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|logos/).*)'],
+  matcher: ['/:path*'],
 };

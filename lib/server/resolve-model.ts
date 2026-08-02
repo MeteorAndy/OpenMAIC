@@ -86,7 +86,7 @@ export async function resolveModel(params: {
   const managed = isServerConfiguredProvider('providers', providerId);
   const clientBaseUrl = managed ? undefined : clientBaseUrlParam || undefined;
   if (clientBaseUrl && process.env.NODE_ENV === 'production') {
-    const ssrfError = await validateUrlForSSRF(clientBaseUrl);
+    const ssrfError = await validateUrlForSSRF(clientBaseUrl, { providerId });
     if (ssrfError) {
       throw new Error(ssrfError);
     }

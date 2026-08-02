@@ -46,8 +46,8 @@ mod windows_job {
             let proc = OpenProcess(PROCESS_SET_QUOTA | PROCESS_TERMINATE, false, pid)
                 .map_err(|e| format!("OpenProcess({pid}): {e}"))?;
 
-            let assigned =
-                AssignProcessToJobObject(job, proc).map_err(|e| format!("AssignProcessToJobObject: {e}"));
+            let assigned = AssignProcessToJobObject(job, proc)
+                .map_err(|e| format!("AssignProcessToJobObject: {e}"));
 
             let _ = CloseHandle(proc); // only needed for the assign call
 

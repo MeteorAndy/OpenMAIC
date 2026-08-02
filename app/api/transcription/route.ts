@@ -38,7 +38,9 @@ export async function POST(req: NextRequest) {
     const managed = isServerConfiguredProvider('asr', effectiveProviderId);
     const clientBaseUrl = managed ? undefined : baseUrl || undefined;
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
-      const ssrfError = await validateUrlForSSRF(clientBaseUrl);
+      const ssrfError = await validateUrlForSSRF(clientBaseUrl, {
+        providerId: effectiveProviderId,
+      });
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }

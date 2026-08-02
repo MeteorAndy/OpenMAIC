@@ -15,13 +15,9 @@ platform before running `cargo build` / `tauri dev`.
 
 ## Windows (current MVP target)
 
-```bash
-# from repo root
-mkdir -p src-tauri/binaries
-curl -sSL -o node-win.zip https://nodejs.org/dist/v22.11.0/node-v22.11.0-win-x64.zip
-# unzip with your tool of choice, then:
-cp node-v22.11.0-win-x64/node.exe src-tauri/binaries/node-x86_64-pc-windows-msvc.exe
-./src-tauri/binaries/node-x86_64-pc-windows-msvc.exe --version   # v22.11.0
+```powershell
+# From the repository root. The script verifies the pinned SHA-256 before use.
+./scripts/prepare-windows-sidecar.ps1
 ```
 
 Pin Node v22.x to match the Next.js standalone runtime. Bump the patch

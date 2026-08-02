@@ -1,0 +1,16 @@
+[[permission]]
+identifier = "desktop-commands"
+description = "Allows the main Desktop Edition window to use its native recovery, credential, diagnostics, and trusted-endpoint commands."
+commands.allow = [
+  "retry_local_service",
+  "enter_recovery_mode",
+  "get_provider_credential",
+  "set_provider_credential",
+  "delete_provider_credential",
+  "clear_provider_credentials",
+  "export_diagnostic_bundle",
+  "open_log_directory",
+  "quit_desktop",
+  "get_trusted_provider_endpoints",
+  "set_trusted_provider_endpoint",
+]

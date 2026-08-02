@@ -3,6 +3,10 @@ import { apiSuccess } from '@/lib/server/api-response';
 import { verifyAccessToken } from '@/lib/server/access-token';
 
 export async function GET() {
+  if (process.env.DESKTOP_RUNTIME === '1') {
+    return apiSuccess({ enabled: false, authenticated: true });
+  }
+
   const accessCode = process.env.ACCESS_CODE;
   const enabled = !!accessCode;
 

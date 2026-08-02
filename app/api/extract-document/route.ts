@@ -177,7 +177,9 @@ export async function POST(req: NextRequest) {
       // Same SSRF guard the document path applies: a client-supplied endpoint
       // must not let the server connect to internal/metadata hosts.
       if (mediaClientBaseUrl && process.env.NODE_ENV === 'production') {
-        const ssrfError = await validateUrlForSSRF(mediaClientBaseUrl);
+        const ssrfError = await validateUrlForSSRF(mediaClientBaseUrl, {
+          providerId: resolvedProviderId,
+        });
         if (ssrfError) {
           return apiError('INVALID_URL', 403, ssrfError);
         }
@@ -281,7 +283,7 @@ export async function POST(req: NextRequest) {
       );
     }
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
-      const ssrfError = await validateUrlForSSRF(clientBaseUrl);
+      const ssrfError = await validateUrlForSSRF(clientBaseUrl, { providerId: provider.id });
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }

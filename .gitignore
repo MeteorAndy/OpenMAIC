@@ -35,6 +35,8 @@ CLAUDE.local.md
 
 # generated: synced from packages/@openmaic/importer/dist for runtime URL import
 /public/vendor/maic-importer
+/public/vendor/katex
+/public/vendor/desktop-fonts
 
 # misc
 .DS_Store
@@ -74,6 +76,10 @@ next-env.d.ts
 
 # docs
 /docs
+!/docs/
+/docs/*
+!/docs/adr/
+!/docs/adr/*.md
 # Eval results
 eval/whiteboard-layout/results/
 eval/outline-language/results/

@@ -107,6 +107,15 @@ vi.mock('@/lib/audio/constants', () => ({
       supportedLanguages: ['zh'],
       supportedFormats: ['browser'],
     },
+    'doubao-asr': {
+      id: 'doubao-asr',
+      name: 'Doubao ASR',
+      requiresApiKey: true,
+      defaultModelId: 'doubao-asr-flash',
+      models: [{ id: 'doubao-asr-flash', name: 'Doubao ASR Flash' }],
+      supportedLanguages: ['auto', 'zh'],
+      supportedFormats: ['mp3'],
+    },
   },
   DEFAULT_TTS_VOICES: {
     'openai-tts': 'alloy',
@@ -362,6 +371,13 @@ describe('settings rehydrate — built-in provider models', () => {
     await vi.waitFor(async () => {
       expect('editInsertToolbarCollapsed' in (await readPersistedState())).toBe(false);
     });
+  });
+
+  it('backfills every registered ASR provider with a usable config object', async () => {
+    const store = await getStore();
+
+    expect(store.getState().asrProvidersConfig['doubao-asr']).toBeDefined();
+    expect(Object.values(store.getState().asrProvidersConfig).every(Boolean)).toBe(true);
   });
 });
 

@@ -19,7 +19,8 @@ const NON_CHAT_PATTERN = /(tts|asr|whisper|embedding|rerank|mineru|image|video|v
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { baseUrl, apiKey, modelsUrl } = body as {
+    const { providerId, baseUrl, apiKey, modelsUrl } = body as {
+      providerId?: string;
       baseUrl?: string;
       apiKey?: string;
       modelsUrl?: string;
@@ -31,7 +32,7 @@ export async function POST(req: NextRequest) {
 
     // SSRF guard on both the base URL and an explicit models URL override.
     for (const url of [baseUrl, modelsUrl].filter(Boolean) as string[]) {
-      const ssrfError = await validateUrlForSSRF(url);
+      const ssrfError = await validateUrlForSSRF(url, { providerId });
       if (ssrfError) return apiError('INVALID_REQUEST', 400, ssrfError);
     }
 

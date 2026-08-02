@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "openmaic-desktop",
+  "productName": "OpenMAIC Desktop",
   "version": "0.1.0",
   "identifier": "com.openmaic.desktop",
   "build": {
@@ -10,6 +10,7 @@
     "frontendDist": "../src-tauri/resources/frontend"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [],
     "security": {
       "csp": null
@@ -28,6 +29,16 @@
     "externalBin": ["binaries/node"],
     "resources": {
       "s": "server"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "offlineInstaller",
+        "silent": true
+      },
+      "nsis": {
+        "installMode": "currentUser"
+      },
+      "signCommand": "powershell -NoProfile -ExecutionPolicy Bypass -File ../scripts/sign-windows.ps1 %1"
     }
   }
 }

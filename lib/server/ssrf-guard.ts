@@ -5,6 +5,7 @@
  * Used by any API route that fetches a user-supplied URL server-side.
  */
 import { promises as dns } from 'node:dns';
+import { promises as fs } from 'node:fs';
 import { isIP } from 'node:net';
 
 function normalizeAddress(value: string): string {
@@ -179,11 +180,123 @@ export function isPrivateIP(ip: string): boolean {
 const LOCAL_NETWORK_BLOCK_MESSAGE =
   'Local/private network URLs are not allowed. If this is a self-hosted deployment or internal gateway (including split-horizon DNS), set ALLOW_LOCAL_NETWORKS=true to allow local network targets.';
 
+const DESKTOP_LOCAL_NETWORK_BLOCK_MESSAGE =
+  'This local provider endpoint is not trusted. Loopback requires a built-in local provider; private LAN endpoints require explicit approval in Desktop settings.';
+const INFRASTRUCTURE_BLOCK_MESSAGE =
+  'Link-local, metadata, unspecified, and other infrastructure-sensitive addresses are not allowed.';
+const DNS_REBINDING_BLOCK_MESSAGE =
+  'The hostname resolved to a mixed public/local address set and was blocked.';
+
+const EXPLICIT_LOCAL_PROVIDER_IDS = new Set([
+  'ollama',
+  'lemonade',
+  'comfyui-image',
+  'voxcpm-tts',
+  'lemonade-tts',
+  'lemonade-asr',
+]);
+
+type AddressClass = 'public' | 'loopback' | 'private-lan' | 'infrastructure';
+
+export interface SSRFValidationContext {
+  providerId?: string;
+  /** Redirect targets never inherit local-provider or user-approved LAN access. */
+  redirect?: boolean;
+}
+
+function classifyAddress(address: string): AddressClass {
+  const normalized = normalizeAddress(address);
+  const mapped = extractMappedIPv4(normalized);
+  if (mapped) return classifyAddress(mapped);
+
+  const ipv4 = parseIPv4(normalized);
+  if (ipv4) {
+    const [first, second] = ipv4;
+    if (first === 127) return 'loopback';
+    if (
+      first === 10 ||
+      (first === 172 && second >= 16 && second <= 31) ||
+      (first === 192 && second === 168)
+    ) {
+      return 'private-lan';
+    }
+    if (
+      first === 0 ||
+      (first === 100 && second >= 64 && second <= 127) ||
+      (first === 169 && second === 254) ||
+      first >= 224
+    ) {
+      return 'infrastructure';
+    }
+    return 'public';
+  }
+
+  if (normalized === '::1') return 'loopback';
+  if (normalized === '::') return 'infrastructure';
+  const firstHextet = getFirstIPv6Hextet(normalized);
+  if (firstHextet === null) return 'public';
+  if ((firstHextet & 0xfe00) === 0xfc00) return 'private-lan';
+  if (
+    (firstHextet & 0xffc0) === 0xfe80 ||
+    (firstHextet & 0xffc0) === 0xfec0 ||
+    isPrivateIP(normalized)
+  ) {
+    return 'infrastructure';
+  }
+  return 'public';
+}
+
+function normalizedOrigin(url: URL): string {
+  const defaultPort = url.protocol === 'http:' ? '80' : '443';
+  return `${url.protocol}//${url.hostname.toLowerCase()}:${url.port || defaultPort}`;
+}
+
+async function isTrustedDesktopEndpoint(url: URL): Promise<boolean> {
+  const file = process.env.DESKTOP_TRUSTED_ENDPOINTS_FILE;
+  if (!file) return false;
+  try {
+    const contents = await fs.readFile(file, 'utf8');
+    if (contents.length > 64 * 1024) return false;
+    const endpoints: unknown = JSON.parse(contents);
+    return (
+      Array.isArray(endpoints) &&
+      endpoints.length <= 256 &&
+      endpoints.every((entry) => typeof entry === 'string') &&
+      endpoints.includes(normalizedOrigin(url))
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function localAddressAllowed(
+  classification: AddressClass,
+  url: URL,
+  context: SSRFValidationContext,
+): Promise<boolean> {
+  if (context.redirect) return false;
+  const desktop = process.env.DESKTOP_RUNTIME === '1';
+  if (classification === 'loopback') {
+    return desktop
+      ? !!context.providerId && EXPLICIT_LOCAL_PROVIDER_IDS.has(context.providerId)
+      : ['true', '1'].includes(process.env.ALLOW_LOCAL_NETWORKS ?? '');
+  }
+  if (classification === 'private-lan') {
+    return desktop
+      ? await isTrustedDesktopEndpoint(url)
+      : ['true', '1'].includes(process.env.ALLOW_LOCAL_NETWORKS ?? '');
+  }
+  return classification === 'public';
+}
+
 /**
  * Validate a URL against SSRF attacks.
  * Returns null if the URL is safe, or an error message string if blocked.
  */
-export async function validateUrlForSSRF(url: string): Promise<string | null> {
+export async function validateUrlForSSRF(
+  url: string,
+  context: SSRFValidationContext = {},
+): Promise<string | null> {
   let parsed: URL;
   try {
     parsed = new URL(url);
@@ -194,25 +307,46 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
   if (parsed.protocol !== 'https:' && parsed.protocol !== 'http:') {
     return 'Only HTTP(S) URLs are allowed';
   }
-
-  // Self-hosted deployments can set ALLOW_LOCAL_NETWORKS=true to skip private-IP checks
-  const allowLocal = process.env.ALLOW_LOCAL_NETWORKS;
-  if (allowLocal === 'true' || allowLocal === '1') {
-    return null;
+  if (parsed.username || parsed.password) {
+    return 'URLs with embedded credentials are not allowed';
   }
 
   const hostname = normalizeAddress(parsed.hostname);
-  if (
-    hostname === 'localhost' ||
-    hostname.endsWith('.local') ||
-    hostname === '0.0.0.0' ||
-    hostname === '::1' ||
-    isPrivateIP(hostname)
-  ) {
-    return LOCAL_NETWORK_BLOCK_MESSAGE;
+  if (['metadata', 'metadata.google.internal', 'instance-data'].includes(hostname)) {
+    return INFRASTRUCTURE_BLOCK_MESSAGE;
   }
 
   if (isIP(hostname)) {
+    const classification = classifyAddress(hostname);
+    if (classification === 'infrastructure') return INFRASTRUCTURE_BLOCK_MESSAGE;
+    return (await localAddressAllowed(classification, parsed, context))
+      ? null
+      : process.env.DESKTOP_RUNTIME === '1'
+        ? DESKTOP_LOCAL_NETWORK_BLOCK_MESSAGE
+        : LOCAL_NETWORK_BLOCK_MESSAGE;
+  }
+
+  if (hostname === 'localhost') {
+    return (await localAddressAllowed('loopback', parsed, context))
+      ? null
+      : process.env.DESKTOP_RUNTIME === '1'
+        ? DESKTOP_LOCAL_NETWORK_BLOCK_MESSAGE
+        : LOCAL_NETWORK_BLOCK_MESSAGE;
+  }
+
+  if (hostname.endsWith('.local')) {
+    return (await localAddressAllowed('private-lan', parsed, context))
+      ? null
+      : process.env.DESKTOP_RUNTIME === '1'
+        ? DESKTOP_LOCAL_NETWORK_BLOCK_MESSAGE
+        : LOCAL_NETWORK_BLOCK_MESSAGE;
+  }
+
+  if (
+    process.env.DESKTOP_RUNTIME !== '1' &&
+    !context.redirect &&
+    ['true', '1'].includes(process.env.ALLOW_LOCAL_NETWORKS ?? '')
+  ) {
     return null;
   }
 
@@ -227,9 +361,18 @@ export async function validateUrlForSSRF(url: string): Promise<string | null> {
     return 'Unable to verify hostname safety';
   }
 
-  if (resolvedAddresses.some(({ address }) => isPrivateIP(address))) {
-    return LOCAL_NETWORK_BLOCK_MESSAGE;
-  }
+  const classes = new Set(resolvedAddresses.map(({ address }) => classifyAddress(address)));
+  if (classes.has('infrastructure')) return INFRASTRUCTURE_BLOCK_MESSAGE;
+  if (classes.size > 1) return DNS_REBINDING_BLOCK_MESSAGE;
 
-  return null;
+  const classification = classes.values().next().value as AddressClass;
+  if (classification === 'loopback') {
+    // Only the literal localhost name can use the local-provider exception.
+    return DNS_REBINDING_BLOCK_MESSAGE;
+  }
+  return (await localAddressAllowed(classification, parsed, context))
+    ? null
+    : process.env.DESKTOP_RUNTIME === '1'
+      ? DESKTOP_LOCAL_NETWORK_BLOCK_MESSAGE
+      : LOCAL_NETWORK_BLOCK_MESSAGE;
 }

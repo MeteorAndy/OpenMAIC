@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Validate baseUrl against SSRF
-    const ssrfError = await validateUrlForSSRF(baseUrl);
+    const ssrfError = await validateUrlForSSRF(baseUrl, { providerId: 'azure-tts' });
     if (ssrfError) {
       return apiError('INVALID_URL', 403, ssrfError);
     }

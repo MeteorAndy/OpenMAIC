@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
         if (endpoint && process.env.NODE_ENV === 'production') {
           const ssrfError = await validateUrlForSSRF(
             endpoint.startsWith('http') ? endpoint : `https://${endpoint}`,
+            { providerId },
           );
           if (ssrfError) {
             return apiError('INVALID_URL', 403, ssrfError);
@@ -81,7 +82,7 @@ export async function POST(req: NextRequest) {
     if (providerId === 'mineru-cloud') {
       const clientCloudBase = managed ? undefined : (baseUrl as string | undefined) || undefined;
       if (clientCloudBase && process.env.NODE_ENV === 'production') {
-        const ssrfError = await validateUrlForSSRF(clientCloudBase);
+        const ssrfError = await validateUrlForSSRF(clientCloudBase, { providerId });
         if (ssrfError) {
           return apiError('INVALID_URL', 403, ssrfError);
         }
@@ -130,7 +131,7 @@ export async function POST(req: NextRequest) {
     // Self-hosted providers: verify by connecting to the base URL
     const clientBaseUrl = managed ? undefined : (baseUrl as string | undefined) || undefined;
     if (clientBaseUrl && process.env.NODE_ENV === 'production') {
-      const ssrfError = await validateUrlForSSRF(clientBaseUrl);
+      const ssrfError = await validateUrlForSSRF(clientBaseUrl, { providerId });
       if (ssrfError) {
         return apiError('INVALID_URL', 403, ssrfError);
       }
